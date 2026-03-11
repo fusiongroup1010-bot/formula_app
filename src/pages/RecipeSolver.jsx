@@ -30,6 +30,7 @@ export default function RecipeSolver() {
     const [activeTab, setActiveTab] = useState('Settings'); // Settings, Constraints, Results, Nutrients
     const [manualCost, setManualCost] = useState(0);
     const [result, setResult] = useState(null);
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, code }
 
     const handleProfileChange = (e) => {
         const val = e.target.value;
@@ -503,7 +504,13 @@ export default function RecipeSolver() {
                                     }
 
                                     return (
-                                        <tr key={ing.code} style={{ background: isUsed ? (idx % 2 === 0 ? '#fff' : '#f8f9fa') : '#f1f5f9', opacity: isUsed ? 1 : 0.6, borderBottom: '1px solid #f3f4f6' }}>
+                                        <tr key={ing.code}
+                                            style={{ background: isUsed ? (idx % 2 === 0 ? '#fff' : '#f8f9fa') : '#f1f5f9', opacity: isUsed ? 1 : 0.6, borderBottom: '1px solid #f3f4f6', cursor: 'context-menu' }}
+                                            onContextMenu={e => {
+                                                e.preventDefault();
+                                                setContextMenu({ x: e.clientX, y: e.clientY, code: ing.code });
+                                            }}
+                                        >
                                             <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: '#d97706', fontWeight: 'bold' }}>
                                                 {ing.code}
                                             </td>
@@ -525,21 +532,27 @@ export default function RecipeSolver() {
                                                 </div>
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: isUsed ? '#fff9c4' : 'transparent' }}>
-                                                <input type="number" disabled={!isUsed} value={recipe.manualIngredients[ing.code] === 0 ? '' : recipe.manualIngredients[ing.code]} onChange={e => {
-                                                    const val = parseFloat(e.target.value) || 0;
-                                                    const curSum = Object.keys(recipe.manualIngredients || {}).reduce((a, c) => {
-                                                        if (c === ing.code || recipe.activeIngredients?.[c] === false) return a;
-                                                        return a + (Number(recipe.manualIngredients[c]) || 0);
-                                                    }, 0);
-                                                    let finalVal = val;
-                                                    if (curSum + val > 100) {
-                                                        finalVal = Math.max(0, 100 - curSum);
-                                                    }
-                                                    const next = { ...recipe.manualIngredients };
-                                                    next[ing.code] = finalVal;
-                                                    setRecipe({ ...recipe, manualIngredients: next });
-                                                    runManualCalculation(next);
-                                                }} style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none', color: isUsed ? '#b45309' : '#9ca3af', fontWeight: 'bold' }} placeholder="0.000" />
+                                                <input type="number" disabled={!isUsed}
+                                                    value={recipe.manualIngredients[ing.code] !== undefined ? recipe.manualIngredients[ing.code] : 0}
+                                                    onChange={e => {
+                                                        const val = parseFloat(e.target.value) || 0;
+                                                        const curSum = Object.keys(recipe.manualIngredients || {}).reduce((a, c) => {
+                                                            if (c === ing.code || recipe.activeIngredients?.[c] === false) return a;
+                                                            return a + (Number(recipe.manualIngredients[c]) || 0);
+                                                        }, 0);
+                                                        let finalVal = val;
+                                                        if (curSum + val > 100) {
+                                                            finalVal = Math.max(0, 100 - curSum);
+                                                        }
+                                                        const next = { ...recipe.manualIngredients };
+                                                        next[ing.code] = finalVal;
+                                                        setRecipe({ ...recipe, manualIngredients: next });
+                                                        runManualCalculation(next);
+                                                    }}
+                                                    style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none', color: isUsed ? '#b45309' : '#9ca3af', fontWeight: 'bold' }}
+                                                    step="0.001"
+                                                    placeholder="0.000"
+                                                />
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: (recipe.ingredientMin && recipe.ingredientMin[ing.code]) ? '#fff9c4' : 'transparent' }}>
                                                 <input type="number" value={recipe.ingredientMin?.[ing.code] ?? ''} onChange={e => {
@@ -555,7 +568,7 @@ export default function RecipeSolver() {
                                                     setRecipe({ ...recipe, ingredientMax: next });
                                                 }} style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
                                             </td>
-                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', color: '#4b5563' }}>{formatCurrency(price)}</td>
+                                            <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', color: '#4b5563' }}>{formatCurrency(price)}</td>
                                         </tr>
                                     );
                                 })}
@@ -616,7 +629,48 @@ export default function RecipeSolver() {
                     </div>
                 </div>
             </div>
-        </div >
+
+            {/* Right-click Context Menu */}
+            {contextMenu && (
+                <>
+                    <div
+                        style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+                        onClick={() => setContextMenu(null)}
+                        onContextMenu={e => { e.preventDefault(); setContextMenu(null); }}
+                    />
+                    <div style={{
+                        position: 'fixed',
+                        top: contextMenu.y,
+                        left: contextMenu.x,
+                        zIndex: 1000,
+                        background: '#fff',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                        overflow: 'hidden',
+                        minWidth: '180px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontSize: '12px'
+                    }}>
+                        <div style={{ padding: '6px 12px', background: '#f8f9fa', borderBottom: '1px solid #e5e7eb', color: '#6b7280', fontWeight: 'bold', fontSize: '11px' }}>
+                            {ingredients.find(i => i.code === contextMenu.code)?.name || contextMenu.code}
+                        </div>
+                        <div
+                            style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444' }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            onClick={() => {
+                                removeIngredient(contextMenu.code);
+                                setContextMenu(null);
+                            }}
+                        >
+                            <span style={{ fontSize: '14px' }}>🗑</span>
+                            Xóa nguyên liệu này
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
     );
 }
 
