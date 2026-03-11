@@ -27,10 +27,11 @@ export default function RecipeSolver() {
     });
 
     const [selectedSearchIng, setSelectedSearchIng] = useState('');
-    const [activeTab, setActiveTab] = useState('Settings'); // Settings, Constraints, Results, Nutrients
+    const [activeTab, setActiveTab] = useState('Settings');
     const [manualCost, setManualCost] = useState(0);
     const [result, setResult] = useState(null);
     const [contextMenu, setContextMenu] = useState(null); // { x, y, code }
+    const [localPctValues, setLocalPctValues] = useState({}); // raw string while typing
 
     const handleProfileChange = (e) => {
         const val = e.target.value;
@@ -536,23 +537,40 @@ export default function RecipeSolver() {
                                                     type="text"
                                                     inputMode="decimal"
                                                     disabled={!isUsed}
-                                                    value={recipe.manualIngredients[ing.code] !== undefined ? recipe.manualIngredients[ing.code] : 0}
+                                                    value={
+                                                        localPctValues[ing.code] !== undefined
+                                                            ? localPctValues[ing.code]
+                                                            : (recipe.manualIngredients[ing.code] !== undefined ? String(recipe.manualIngredients[ing.code]) : '0')
+                                                    }
+                                                    onFocus={() => {
+                                                        // When focused, seed local value from recipe
+                                                        const cur = recipe.manualIngredients[ing.code];
+                                                        setLocalPctValues(prev => ({ ...prev, [ing.code]: cur !== undefined ? String(cur) : '0' }));
+                                                    }}
                                                     onChange={e => {
-                                                        // Replace comma with period
-                                                        const raw = e.target.value.replace(',', '.');
+                                                        // Allow typing freely (including '5.' or '5.2')
+                                                        let raw = e.target.value.replace(',', '.'); // convert comma -> period
+                                                        // Only allow digits and one period
+                                                        if (/^\d*\.?\d*$/.test(raw)) {
+                                                            setLocalPctValues(prev => ({ ...prev, [ing.code]: raw }));
+                                                        }
+                                                    }}
+                                                    onBlur={() => {
+                                                        // Commit parsed value to recipe on blur
+                                                        const raw = localPctValues[ing.code] ?? String(recipe.manualIngredients[ing.code] || 0);
                                                         const val = parseFloat(raw) || 0;
                                                         const curSum = Object.keys(recipe.manualIngredients || {}).reduce((a, c) => {
                                                             if (c === ing.code || recipe.activeIngredients?.[c] === false) return a;
                                                             return a + (Number(recipe.manualIngredients[c]) || 0);
                                                         }, 0);
                                                         let finalVal = val;
-                                                        if (curSum + val > 100) {
-                                                            finalVal = Math.max(0, 100 - curSum);
-                                                        }
+                                                        if (curSum + val > 100) finalVal = Math.max(0, 100 - curSum);
                                                         const next = { ...recipe.manualIngredients };
                                                         next[ing.code] = finalVal;
                                                         setRecipe({ ...recipe, manualIngredients: next });
                                                         runManualCalculation(next);
+                                                        // Clear local so display reverts to recipe value
+                                                        setLocalPctValues(prev => { const n = { ...prev }; delete n[ing.code]; return n; });
                                                     }}
                                                     style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none', color: isUsed ? '#b45309' : '#9ca3af', fontWeight: 'bold' }}
                                                     placeholder="0.000"
