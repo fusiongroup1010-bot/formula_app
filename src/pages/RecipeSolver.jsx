@@ -532,10 +532,15 @@ export default function RecipeSolver() {
                                                 </div>
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: isUsed ? '#fff9c4' : 'transparent' }}>
-                                                <input type="number" disabled={!isUsed}
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    disabled={!isUsed}
                                                     value={recipe.manualIngredients[ing.code] !== undefined ? recipe.manualIngredients[ing.code] : 0}
                                                     onChange={e => {
-                                                        const val = parseFloat(e.target.value) || 0;
+                                                        // Replace comma with period
+                                                        const raw = e.target.value.replace(',', '.');
+                                                        const val = parseFloat(raw) || 0;
                                                         const curSum = Object.keys(recipe.manualIngredients || {}).reduce((a, c) => {
                                                             if (c === ing.code || recipe.activeIngredients?.[c] === false) return a;
                                                             return a + (Number(recipe.manualIngredients[c]) || 0);
@@ -550,7 +555,6 @@ export default function RecipeSolver() {
                                                         runManualCalculation(next);
                                                     }}
                                                     style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none', color: isUsed ? '#b45309' : '#9ca3af', fontWeight: 'bold' }}
-                                                    step="0.001"
                                                     placeholder="0.000"
                                                 />
                                             </td>
@@ -665,7 +669,7 @@ export default function RecipeSolver() {
                             }}
                         >
                             <span style={{ fontSize: '14px' }}>🗑</span>
-                            Xóa nguyên liệu này
+                            Remove ingredient
                         </div>
                     </div>
                 </>
