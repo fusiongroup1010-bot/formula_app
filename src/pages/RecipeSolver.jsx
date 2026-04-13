@@ -736,7 +736,7 @@ export default function RecipeSolver() {
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
                 {/* Composition Left */}
-                <div style={{ borderRight: '2px solid #ccc', display: 'flex', flexDirection: 'column', minHeight: 0, resize: 'horizontal', overflow: 'hidden', width: selectedNutrientKey ? '40%' : '50%', minWidth: '25%', maxWidth: '75%' }}>
+                <div style={{ borderRight: '2px solid #ccc', display: 'flex', flexDirection: 'column', minHeight: 0, resize: 'horizontal', overflow: 'hidden', width: '50%', minWidth: '25%', maxWidth: '75%' }}>
                     <div style={{ background: '#e9ecef', padding: '8px 12px', fontWeight: 'bold', fontSize: '13px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#495057' }}>
                         Composition
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -912,7 +912,7 @@ export default function RecipeSolver() {
                 </div>
 
                 {/* Analysis Right */}
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: '30%', borderRight: selectedNutrientKey ? '2px solid #ccc' : 'none' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: '30%' }}>
                     <div style={{ background: '#e9ecef', padding: '8px 12px', fontWeight: 'bold', fontSize: '13px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#495057' }}>
                         Nutrient Analysis
                     </div>
@@ -975,7 +975,7 @@ export default function RecipeSolver() {
                                     return (
                                         <tr 
                                             key={n.key} 
-                                            onClick={() => setSelectedNutrientKey(n.key)}
+                                            onDoubleClick={() => setSelectedNutrientKey(n.key)}
                                             style={{ 
                                                 background: selectedNutrientKey === n.key ? '#bae6fd' : (alert ? '#f8d7da' : (idx % 2 === 0 ? '#fff' : '#f8f9fa')), 
                                                 borderBottom: '1px solid #f3f4f6', 
@@ -1035,12 +1035,14 @@ export default function RecipeSolver() {
                         .sort((a, b) => b.contributionAbs - a.contributionAbs); // Sort by highest contribution
 
                     return (
-                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1.5, minHeight: 0, minWidth: '30%', overflow: 'hidden' }}>
-                            <div style={{ background: '#e9ecef', padding: '8px 12px', fontWeight: 'bold', fontSize: '13px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#495057' }}>
-                                <span>FS_{selectedNutrientKey.substring(0,4).toUpperCase()} - {selectedNutrientInfo.label} ({finalNutrientValue.toFixed(3)} {selectedNutrientInfo.unit})</span>
-                                <X size={16} style={{ cursor: 'pointer', color: '#6b7280' }} onClick={() => setSelectedNutrientKey(null)} />
-                            </div>
-                            <div style={{ overflowY: 'auto', flex: 1, background: '#fff' }}>
+                        <>
+                            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1040 }} onClick={() => setSelectedNutrientKey(null)} />
+                            <div style={{ position: 'fixed', top: '10vh', left: '15vw', right: '15vw', bottom: '10vh', background: '#fff', zIndex: 1050, borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div style={{ background: '#f8f9fa', padding: '16px 20px', fontWeight: 'bold', fontSize: '15px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#111827' }}>
+                                    <span>Nutrient Control: FS_{selectedNutrientKey.substring(0,4).toUpperCase()} - {selectedNutrientInfo.label} <span style={{ color: '#059669', marginLeft: '8px' }}>({finalNutrientValue.toFixed(3)} {selectedNutrientInfo.unit})</span></span>
+                                    <X size={20} style={{ cursor: 'pointer', color: '#6b7280' }} onClick={() => setSelectedNutrientKey(null)} />
+                                </div>
+                                <div style={{ overflowY: 'auto', flex: 1, background: '#fff', padding: '16px' }}>
                                 <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', textAlign: 'right' }}>
                                     <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1, boxShadow: '0 1px 0 #ccc' }}>
                                         <tr>
@@ -1072,6 +1074,7 @@ export default function RecipeSolver() {
                                 </table>
                             </div>
                         </div>
+                        </>
                     );
                 })()}
             </div>
