@@ -169,8 +169,32 @@ export default function RecipeSolver() {
         const wt = targetWt !== undefined ? targetWt : recipe.targetWeight;
         const currentAdded = addedIngs || recipe.addedIngredients || [];
 
-        // Remove auto-balance logic so user input respects exactly what they type.
-        // It's common to formulate partial formulas and check calculations before filling 100%.
+        // Auto-balance logic: Set the ingredient with the highest % to (100 - sum of others)
+        if (!skipBalance) {
+            let maxCode = null;
+            let maxVal = -1;
+            let sumOthers = 0;
+            
+            const validCodes = Object.keys(ings).filter(c => currentAdded.includes(c) && actives[c] !== false && ingredients.some(i => i.code === c));
+            
+            validCodes.forEach(code => {
+                const val = Number(ings[code]) || 0;
+                if (val > maxVal) {
+                    maxVal = val;
+                    maxCode = code;
+                }
+            });
+
+            if (maxCode) {
+                validCodes.forEach(code => {
+                    if (code !== maxCode) {
+                        sumOthers += Number(ings[code]) || 0;
+                    }
+                });
+                const balanceVal = Math.max(0, 100 - sumOthers);
+                ings[maxCode] = Number(balanceVal.toFixed(3));
+            }
+        }
 
         Object.keys(ings).forEach(code => {
             // Only calculate cost for ingredients that are actively added to the recipe
