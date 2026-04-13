@@ -534,9 +534,19 @@ export default function RecipeSolver() {
         runManualCalculation(nextManual, nextActive);
     };
 
-    const sum = Object.keys(recipe.manualIngredients || {}).reduce((a, code) => {
-        const val = recipe.activeIngredients?.[code] !== false ? (Number(recipe.manualIngredients[code]) || 0) : 0;
-        return Math.round((a + val) * 1000) / 1000;
+    const sum = (recipe.addedIngredients || []).reduce((a, code) => {
+        const ing = ingredients.find(i => i.code === code);
+        if (!ing) return a;
+        
+        const isUsed = recipe.activeIngredients?.[code] !== false;
+        if (!isUsed) return a;
+
+        let calcPct = recipe.manualIngredients[code] || 0;
+        if (result && result[code] !== undefined) {
+             calcPct = (result[code] / recipe.targetWeight) * 100;
+        }
+        
+        return Math.round((a + calcPct) * 1000) / 1000;
     }, 0);
     const displayCost = result && result.feasible ? formatCurrency(result.result) : formatCurrency(manualCost);
     const displayPricePerKg = result && result.feasible ? formatCurrency(result.result / recipe.targetWeight) : formatCurrency(manualCost / recipe.targetWeight);
