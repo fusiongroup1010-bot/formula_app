@@ -59,6 +59,9 @@ export default function RecipeSolver() {
         if (!recipe.manualIngredients || Object.keys(recipe.manualIngredients).length === 0) return;
         let totalCost = 0;
         Object.keys(recipe.manualIngredients).forEach(code => {
+            // Only calculate cost for ingredients that are actively added to the recipe
+            if (!(recipe.addedIngredients || []).includes(code)) return;
+            
             if (recipe.activeIngredients?.[code] !== false) {
                 const percent = Number(recipe.manualIngredients[code]) || 0;
                 if (percent > 0) {
@@ -168,6 +171,9 @@ export default function RecipeSolver() {
         // It's common to formulate partial formulas and check calculations before filling 100%.
 
         Object.keys(ings).forEach(code => {
+            // Only calculate cost for ingredients that are actively added to the recipe
+            if (!(recipe.addedIngredients || []).includes(code)) return;
+
             if (actives[code] !== false) {
                 const percent = Number(ings[code]) || 0;
                 if (percent > 0) {
