@@ -61,6 +61,7 @@ export default function RecipeSolver() {
         Object.keys(recipe.manualIngredients).forEach(code => {
             // Only calculate cost for ingredients that are actively added to the recipe
             if (!(recipe.addedIngredients || []).includes(code)) return;
+            if (!ingredients.some(i => i.code === code)) return;
             
             if (recipe.activeIngredients?.[code] !== false) {
                 const percent = Number(recipe.manualIngredients[code]) || 0;
@@ -160,19 +161,22 @@ export default function RecipeSolver() {
     };
 
 
-    const runManualCalculation = (manualIngs, activeIngs, targetWt, skipBalance = false, priceMonthOverride = null) => {
+    const runManualCalculation = (manualIngs, activeIngs, targetWt, skipBalance = false, priceMonthOverride = null, addedIngs = null) => {
         const res = { feasible: true, result: 0, isManual: true };
         let totalCost = 0;
-        let ings = { ...manualIngs } || { ...recipe.manualIngredients } || {};
+        let ings = manualIngs || { ...recipe.manualIngredients } || {};
         const actives = activeIngs || recipe.activeIngredients || {};
         const wt = targetWt !== undefined ? targetWt : recipe.targetWeight;
+        const currentAdded = addedIngs || recipe.addedIngredients || [];
 
         // Remove auto-balance logic so user input respects exactly what they type.
         // It's common to formulate partial formulas and check calculations before filling 100%.
 
         Object.keys(ings).forEach(code => {
             // Only calculate cost for ingredients that are actively added to the recipe
-            if (!(recipe.addedIngredients || []).includes(code)) return;
+            // AND actually exist in the current master ingredients list (to avoid ghost deleted elements)
+            if (!currentAdded.includes(code)) return;
+            if (!ingredients.some(i => i.code === code)) return;
 
             if (actives[code] !== false) {
                 const percent = Number(ings[code]) || 0;
@@ -602,7 +606,7 @@ export default function RecipeSolver() {
             setResult(null);
             setViewMode('editor');
             // Pass priceMonthOverride to avoid stale closure: currentPrices is still from old recipe's month
-            runManualCalculation(toEdit.manualIngredients, toEdit.activeIngredients, toEdit.targetWeight, true, toEdit.priceMonth);
+            runManualCalculation(toEdit.manualIngredients, toEdit.activeIngredients, toEdit.targetWeight, true, toEdit.priceMonth, toEdit.addedIngredients);
         }
     };
 
