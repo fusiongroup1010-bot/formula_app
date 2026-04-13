@@ -1,12 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../store';
 import solver from 'javascript-lp-solver';
 import * as XLSX from 'xlsx';
 import { Calculator, Download, AlertTriangle, CheckCircle, Save, LayoutTemplate, Activity, Sliders, Search, Plus, PieChart, X, Printer, Copy, FilePlus, Edit3, Eye, Trash2, RefreshCw, ArrowLeft } from 'lucide-react';
 import { nutrientGroups, aafcoProfiles, allNutrients, formatCurrency } from '../constants';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import logoSrc from '../assets/logo.png';
 
 export default function RecipeSolver() {
-    const { ingredients, priceLists, recipes, saveRecipe, deleteRecipe } = useAppContext();
+    const { ingredients, priceLists, recipes, saveRecipe, deleteRecipe, currentUser } = useAppContext();
     const availableMonths = Object.keys(priceLists).sort().reverse();
     const defaultMonth = availableMonths[0] || '2026-02';
 
@@ -23,7 +26,8 @@ export default function RecipeSolver() {
         activeIngredients: {},
         ingredientMin: {},
         ingredientMax: {},
-        addedIngredients: []
+        addedIngredients: [],
+        remarks: ''
     });
 
     const [selectedSearchIng, setSelectedSearchIng] = useState('');
@@ -32,6 +36,11 @@ export default function RecipeSolver() {
     const [result, setResult] = useState(null);
     const [contextMenu, setContextMenu] = useState(null); // { x, y, code }
     const [localPctValues, setLocalPctValues] = useState({}); // raw string while typing
+    
+    // Nutrition Display System States
+    const [nutDisplayMode, setNutDisplayMode] = useState('as-fed'); // 'as-fed', 'dm', 'reference'
+    const [refDMValue, setRefDMValue] = useState(90); // default 90%
+    const [selectedNutrientKey, setSelectedNutrientKey] = useState(null);
 
     const handleProfileChange = (e) => {
         const val = e.target.value;
@@ -43,6 +52,24 @@ export default function RecipeSolver() {
     };
 
     const currentPrices = useMemo(() => priceLists[recipe.priceMonth] || {}, [priceLists, recipe.priceMonth]);
+
+    // Recalculate cost whenever price month changes (avoids stale closure in manualCost)
+    useEffect(() => {
+        if (!result || !result.isManual) return; // only for manual recipes, optimizer handles its own cost
+        if (!recipe.manualIngredients || Object.keys(recipe.manualIngredients).length === 0) return;
+        let totalCost = 0;
+        Object.keys(recipe.manualIngredients).forEach(code => {
+            if (recipe.activeIngredients?.[code] !== false) {
+                const percent = Number(recipe.manualIngredients[code]) || 0;
+                if (percent > 0) {
+                    const amt = (percent / 100) * recipe.targetWeight;
+                    const price = currentPrices[code] || 0;
+                    totalCost += amt * price;
+                }
+            }
+        });
+        setManualCost(totalCost);
+    }, [currentPrices]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const runOptimization = () => {
         const model = {
@@ -122,20 +149,33 @@ export default function RecipeSolver() {
         setActiveTab('Results');
     };
 
-    const runManualCalculation = (manualIngs, activeIngs, targetWt) => {
+    const getPct = (code, mIngs = recipe.manualIngredients) => {
+        if (result && result.feasible && !result.isManual && result[code] !== undefined) {
+            return (result[code] / recipe.targetWeight) * 100;
+        }
+        return mIngs[code] || 0;
+    };
+
+
+    const runManualCalculation = (manualIngs, activeIngs, targetWt, skipBalance = false, priceMonthOverride = null) => {
         const res = { feasible: true, result: 0, isManual: true };
         let totalCost = 0;
-        const ings = manualIngs || recipe.manualIngredients || {};
+        let ings = { ...manualIngs } || { ...recipe.manualIngredients } || {};
         const actives = activeIngs || recipe.activeIngredients || {};
         const wt = targetWt !== undefined ? targetWt : recipe.targetWeight;
 
+        // Remove auto-balance logic so user input respects exactly what they type.
+        // It's common to formulate partial formulas and check calculations before filling 100%.
+
         Object.keys(ings).forEach(code => {
             if (actives[code] !== false) {
-                const percent = ings[code];
+                const percent = Number(ings[code]) || 0;
                 if (percent > 0) {
                     const amt = (percent / 100) * wt;
                     res[code] = amt;
-                    const price = currentPrices[code] || 0;
+                    // Use price from override month (e.g. when loading a recipe) or current month
+                    const effectivePrices = priceMonthOverride ? (priceLists[priceMonthOverride] || {}) : currentPrices;
+                    const price = effectivePrices[code] || 0;
                     totalCost += amt * price;
                 }
             }
@@ -145,6 +185,9 @@ export default function RecipeSolver() {
         setResult(res);
         setManualCost(totalCost);
         setActiveTab('Results');
+        if (!skipBalance) {
+            setRecipe(prev => ({ ...prev, manualIngredients: ings }));
+        }
         return totalCost;
     };
 
@@ -162,6 +205,14 @@ export default function RecipeSolver() {
                 });
             }
         });
+
+        // Special handling for Ca/P Ratio (should be total Ca / total P, not weighted average of ratios)
+        if (totals['P'] > 0) {
+            totals['Ca_P_Ratio'] = totals['Ca'] / totals['P'];
+        } else {
+            totals['Ca_P_Ratio'] = 0;
+        }
+
         return totals;
     }, [result, ingredients, recipe.targetWeight]);
 
@@ -194,8 +245,8 @@ export default function RecipeSolver() {
                     Code: ing.code,
                     Ingredient: ing.name,
                     Group: ing.group,
-                    'Amount (kg)': amt.toFixed(2),
-                    'Ratio (%)': ((amt / recipe.targetWeight) * 100).toFixed(2),
+                    'Amount (kg)': amt.toFixed(3),
+                    'Ratio (%)': ((amt / recipe.targetWeight) * 100).toFixed(3),
                     'Unit Price (VND)': price.toLocaleString('en-US'),
                     'Cost (VND)': Math.round(amt * price).toLocaleString('en-US')
                 });
@@ -203,7 +254,7 @@ export default function RecipeSolver() {
         });
 
         const totalCost = currentResult.result;
-        data.push({ Code: 'TOTAL', Ingredient: '', Group: '', 'Amount (kg)': recipe.targetWeight.toFixed(2), 'Ratio (%)': '100%', 'Unit Price (VND)': '', 'Cost (VND)': Math.round(totalCost).toLocaleString('en-US') });
+        data.push({ Code: 'TOTAL', Ingredient: '', Group: '', 'Amount (kg)': recipe.targetWeight.toFixed(3), 'Ratio (%)': '100.000%', 'Unit Price (VND)': '', 'Cost (VND)': Math.round(totalCost).toLocaleString('en-US') });
 
         const ws1 = XLSX.utils.json_to_sheet(data);
 
@@ -243,7 +294,212 @@ export default function RecipeSolver() {
     };
 
     const exportPDF = () => {
-        window.print();
+        // Build current result data
+        let currentResult = result;
+        if (!currentResult || !currentResult.feasible) {
+            const res = { feasible: true, result: 0, isManual: true };
+            let totalCost = 0;
+            Object.keys(recipe.manualIngredients || {}).forEach(code => {
+                if (recipe.activeIngredients?.[code] !== false) {
+                    const percent = recipe.manualIngredients[code];
+                    if (percent > 0) {
+                        const amt = (percent / 100) * recipe.targetWeight;
+                        res[code] = amt;
+                        totalCost += amt * (currentPrices[code] || 0);
+                    }
+                }
+            });
+            res.result = totalCost;
+            currentResult = res;
+        }
+
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const margin = 15;
+        const today = new Date();
+        const dateStr = `${today.getDate().toString().padStart(2,'0')}/${(today.getMonth()+1).toString().padStart(2,'0')}/${today.getFullYear()}`;
+
+        // ── Fusion Group logo (top-left) ───────────────────────────────
+        // logo.png is square, display proportionally
+        doc.addImage(logoSrc, 'PNG', margin, 4, 18, 18);
+
+        // ── Top-right info ────────────────────────────────────────────
+        const userEmail = currentUser?.email || '';
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(60, 60, 60);
+        doc.text(dateStr, pageW - margin, 10, { align: 'right' });
+        doc.text(userEmail, pageW - margin, 14.5, { align: 'right' });
+        doc.text('Version:   1', pageW - margin, 19, { align: 'right' });
+
+        // ── Horizontal rule ───────────────────────────────────────────
+        doc.setDrawColor(180, 30, 30);
+        doc.setLineWidth(0.4);
+        doc.line(margin, 24, pageW - margin, 24);
+
+        // ── Formula title ─────────────────────────────────────────────
+        const priceMonth = recipe.priceMonth || '';
+        const profile = recipe.referenceProfile || '';
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(15);
+        doc.setTextColor(180, 30, 30);
+        doc.text(`${recipe.name} - ${profile}`, margin, 33);
+
+        // ── Summary grid ──────────────────────────────────────────────
+        const totalCostResult = currentResult.result || 0;
+        const pricePerKg = recipe.targetWeight > 0
+            ? (totalCostResult / recipe.targetWeight).toFixed(0)
+            : '0';
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(30, 30, 30);
+
+        const col1x = margin;
+        const col2x = margin + 65;
+        const col3x = margin + 110;
+        const col4x = margin + 148;
+        let sy = 38;
+        const rowH = 5.5;
+
+        // Row 1
+        doc.setFont('helvetica', 'bold'); doc.text('Price list:', col1x, sy); doc.setFont('helvetica', 'normal'); doc.text(priceMonth, col1x + 22, sy);
+        doc.setFont('helvetica', 'bold'); doc.text('Site:', col3x, sy); doc.setFont('helvetica', 'normal'); doc.text('FUSION_VN', col3x + 18, sy);
+        sy += rowH;
+        // Row 2
+        doc.setFont('helvetica', 'bold'); doc.text('Price:', col1x, sy); doc.setFont('helvetica', 'normal'); doc.text(`${Number(pricePerKg).toLocaleString('vi-VN')} VND/kg`, col1x + 22, sy);
+        doc.setFont('helvetica', 'bold'); doc.text('Customer:', col3x, sy); doc.setFont('helvetica', 'normal'); doc.text('/', col3x + 25, sy);
+        sy += rowH;
+        // Row 3
+        doc.setFont('helvetica', 'bold'); doc.text('Batch weight:', col1x, sy);
+        doc.setFont('helvetica', 'normal'); doc.text(`${recipe.targetWeight.toFixed(3)}    kg`, col1x + 28, sy);
+        doc.setFont('helvetica', 'bold'); doc.text('Animal Type:', col3x, sy); doc.setFont('helvetica', 'normal'); doc.text(profile, col3x + 27, sy);
+        sy += rowH + 2;
+
+        // ── Composition table ─────────────────────────────────────────
+        // Build rows with accumulated kg
+        const rows = [];
+        let accumulated = 0;
+        let totalPct = 0;
+        let totalBatch = 0;
+
+        const sortedAddedForPdf = [...(recipe.addedIngredients || [])].sort((a, b) => {
+            const getLocalPct = (code) => {
+                if (currentResult && !currentResult.isManual && currentResult[code] !== undefined) return (currentResult[code] / recipe.targetWeight) * 100;
+                return recipe.manualIngredients[code] || 0;
+            };
+            return getLocalPct(b) - getLocalPct(a);
+        });
+
+        sortedAddedForPdf.forEach(code => {
+            const ing = ingredients.find(i => i.code === code);
+            if (!ing) return;
+            const amt = currentResult[ing.code] || 0;
+            if (amt <= 0) return;
+            const pct = (amt / recipe.targetWeight) * 100;
+            accumulated += amt;
+            totalPct += pct;
+            totalBatch += amt;
+            rows.push([
+                ing.code,
+                ing.name,
+                pct.toFixed(3),
+                amt.toFixed(3),
+                accumulated.toFixed(3)
+            ]);
+        });
+
+        // totals row
+        const totalsRow = [
+            '', '',
+            totalPct.toFixed(3),
+            totalBatch.toFixed(3),
+            accumulated.toFixed(3)
+        ];
+
+        // Draw section header bar
+        doc.setFillColor(80, 80, 90);
+        doc.rect(margin, sy, pageW - margin * 2, 7, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text('Composition', margin + 3, sy + 5);
+        sy += 7;
+
+        autoTable(doc, {
+            startY: sy,
+            head: [[
+                { content: 'Code', styles: { halign: 'left' } },
+                { content: 'Discription', styles: { halign: 'left' } },
+                { content: '%', styles: { halign: 'right' } },
+                { content: 'Batch\nkg', styles: { halign: 'right' } },
+                { content: 'Accumulated\nkg', styles: { halign: 'right' } }
+            ]],
+            body: rows,
+            foot: [[
+                { content: '', colSpan: 2, styles: { halign: 'left', fontStyle: 'bold' } },
+                { content: totalsRow[2], styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: totalsRow[3], styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: totalsRow[4], styles: { halign: 'right', fontStyle: 'bold' } },
+            ]],
+            showFoot: 'lastPage',
+            margin: { left: margin, right: margin },
+            styles: {
+                fontSize: 8.5,
+                cellPadding: { top: 2, bottom: 2, left: 3, right: 3 },
+                textColor: [30, 30, 30],
+                lineColor: [220, 220, 220],
+                lineWidth: 0.2,
+            },
+            headStyles: {
+                fillColor: [248, 248, 248],
+                textColor: [30, 30, 30],
+                fontStyle: 'bold',
+                halign: 'center',
+                lineColor: [200, 200, 200],
+                lineWidth: 0.3,
+            },
+            footStyles: {
+                fillColor: [255, 255, 255],
+                textColor: [30, 30, 30],
+                fontStyle: 'bold',
+                lineColor: [200, 200, 200],
+                lineWidth: 0.4,
+            },
+            alternateRowStyles: { fillColor: [255, 255, 255] },
+            columnStyles: {
+                0: { halign: 'left', cellWidth: 38, textColor: [180, 100, 20], fontStyle: 'bold' },
+                1: { halign: 'left', cellWidth: 'auto' },
+                2: { halign: 'right', cellWidth: 20 },
+                3: { halign: 'right', cellWidth: 22 },
+                4: { halign: 'right', cellWidth: 28 },
+            },
+            didParseCell: (data) => {
+                // Make even rows slightly off-white to mimic the sample
+                if (data.section === 'body' && data.row.index % 2 === 1) {
+                    data.cell.styles.fillColor = [250, 250, 250];
+                }
+            }
+        });
+
+        const finalY = doc.lastAutoTable.finalY + 6;
+
+        let currentY = finalY;
+
+        // ── Remarks (bold) below composition ─────────────────────────
+        const rawRemarks = (recipe.remarks || '').trim();
+        if (rawRemarks) {
+            const remarksText = `Remarks: ${rawRemarks}`;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.setTextColor(30, 30, 30);
+            // Wrap long remarks text to page width
+            const maxLineWidth = pageW - margin * 2;
+            const lines = doc.splitTextToSize(remarksText, maxLineWidth);
+            doc.text(lines, margin, currentY);
+        }
+
+        doc.save(`Formula_${recipe.name.replace(/\s+/g, '_')}.pdf`);
     };
 
     const handleConstraintChange = (key, type, val) => {
@@ -258,31 +514,40 @@ export default function RecipeSolver() {
             const isValid = ingredients.some(i => i.code === selectedSearchIng);
             if (!isValid) return;
             const nextAdded = [...(recipe.addedIngredients || []), selectedSearchIng];
-            const nextManual = { ...recipe.manualIngredients, [selectedSearchIng]: 0 };
+            let nextManual = { ...recipe.manualIngredients, [selectedSearchIng]: 0 };
             const nextActive = { ...recipe.activeIngredients, [selectedSearchIng]: true };
+            
             setRecipe({ ...recipe, addedIngredients: nextAdded, manualIngredients: nextManual, activeIngredients: nextActive });
             setSelectedSearchIng('');
+            runManualCalculation(nextManual, nextActive);
         }
     };
 
     const removeIngredient = (code) => {
         const nextAdded = (recipe.addedIngredients || []).filter(c => c !== code);
-        const nextManual = { ...recipe.manualIngredients };
+        let nextManual = { ...recipe.manualIngredients };
         delete nextManual[code];
         const nextActive = { ...recipe.activeIngredients };
         delete nextActive[code];
+        
         setRecipe({ ...recipe, addedIngredients: nextAdded, manualIngredients: nextManual, activeIngredients: nextActive });
         runManualCalculation(nextManual, nextActive);
     };
 
     const sum = Object.keys(recipe.manualIngredients || {}).reduce((a, code) => {
-        return recipe.activeIngredients?.[code] !== false ? a + (Number(recipe.manualIngredients[code]) || 0) : a;
+        const val = recipe.activeIngredients?.[code] !== false ? (Number(recipe.manualIngredients[code]) || 0) : 0;
+        return Math.round((a + val) * 1000) / 1000;
     }, 0);
     const displayCost = result && result.feasible ? formatCurrency(result.result) : formatCurrency(manualCost);
     const displayPricePerKg = result && result.feasible ? formatCurrency(result.result / recipe.targetWeight) : formatCurrency(manualCost / recipe.targetWeight);
 
     const handleSave = () => {
-        saveRecipe(recipe);
+        // Sort addedIngredients before saving based on usage percent (descending)
+        const sortedAdded = [...(recipe.addedIngredients || [])].sort((a, b) => getPct(b) - getPct(a));
+        const finalRecipe = { ...recipe, addedIngredients: sortedAdded };
+        
+        saveRecipe(finalRecipe);
+        setRecipe(finalRecipe);
         alert('Recipe saved successfully!');
     };
 
@@ -320,7 +585,8 @@ export default function RecipeSolver() {
             setRecipe(JSON.parse(JSON.stringify(toEdit)));
             setResult(null);
             setViewMode('editor');
-            runManualCalculation(toEdit.manualIngredients, toEdit.activeIngredients, toEdit.targetWeight);
+            // Pass priceMonthOverride to avoid stale closure: currentPrices is still from old recipe's month
+            runManualCalculation(toEdit.manualIngredients, toEdit.activeIngredients, toEdit.targetWeight, true, toEdit.priceMonth);
         }
     };
 
@@ -432,8 +698,22 @@ export default function RecipeSolver() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', width: '160px' }}>
                         <strong>Batch weight:</strong>
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <input type="number" value={recipe.targetWeight} onChange={e => setRecipe({ ...recipe, targetWeight: Number(e.target.value) })} style={{ border: 'none', borderBottom: '1px solid #ccc', width: '50px', background: 'transparent', textAlign: 'right', fontSize: '12px', outline: 'none' }} />
+                            <input type="number" value={recipe.targetWeight} onChange={e => {
+                                const nextWt = Number(e.target.value);
+                                setRecipe({ ...recipe, targetWeight: nextWt });
+                                if (!result || result.isManual) {
+                                    runManualCalculation(recipe.manualIngredients, recipe.activeIngredients, nextWt, true);
+                                }
+                            }} style={{ border: 'none', borderBottom: '1px solid #ccc', width: '50px', background: 'transparent', textAlign: 'right', fontSize: '12px', outline: 'none' }} />
                             <span style={{ marginLeft: '4px' }}>kg</span>
+                        </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '150px' }}>
+                        <strong>Standard DM:</strong>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <input type="number" value={refDMValue} onChange={e => setRefDMValue(Number(e.target.value))} style={{ border: 'none', borderBottom: '1px solid #ccc', width: '40px', background: 'transparent', textAlign: 'right', fontSize: '12px', outline: 'none' }} />
+                            <span style={{ marginLeft: '4px' }}>%</span>
                         </div>
                     </div>
                 </div>
@@ -456,7 +736,7 @@ export default function RecipeSolver() {
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
                 {/* Composition Left */}
-                <div style={{ borderRight: '2px solid #ccc', display: 'flex', flexDirection: 'column', minHeight: 0, resize: 'horizontal', overflow: 'hidden', width: '50%', minWidth: '25%', maxWidth: '75%' }}>
+                <div style={{ borderRight: '2px solid #ccc', display: 'flex', flexDirection: 'column', minHeight: 0, resize: 'horizontal', overflow: 'hidden', width: selectedNutrientKey ? '40%' : '50%', minWidth: '25%', maxWidth: '75%' }}>
                     <div style={{ background: '#e9ecef', padding: '8px 12px', fontWeight: 'bold', fontSize: '13px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#495057' }}>
                         Composition
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -477,6 +757,31 @@ export default function RecipeSolver() {
                             <Plus size={16} onClick={addIngredient} style={{ cursor: 'pointer', color: '#059669', background: '#fff', borderRadius: '50%', padding: '2px' }} />
                         </div>
                     </div>
+
+                    {/* Remarks bar */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '5px 10px', background: '#fffde7', borderBottom: '1px solid #e5c800' }}>
+                        <strong style={{ fontSize: '11px', color: '#6b5900', whiteSpace: 'nowrap', paddingTop: '3px' }}>Remarks:</strong>
+                        <textarea
+                            value={recipe.remarks || ''}
+                            onChange={e => setRecipe({ ...recipe, remarks: e.target.value })}
+                            placeholder="Enter remarks / notes for this formula..."
+                            rows={2}
+                            style={{
+                                flex: 1,
+                                fontSize: '11px',
+                                border: '1px solid #e5c800',
+                                borderRadius: '3px',
+                                padding: '3px 6px',
+                                resize: 'vertical',
+                                outline: 'none',
+                                background: '#fffff0',
+                                color: '#333',
+                                fontFamily: 'Arial, sans-serif',
+                                lineHeight: '1.4'
+                            }}
+                        />
+                    </div>
+
                     <div style={{ overflowY: 'auto', flex: 1, background: '#fff' }}>
                         <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', textAlign: 'right' }}>
                             <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1, boxShadow: '0 1px 0 #ccc' }}>
@@ -504,9 +809,17 @@ export default function RecipeSolver() {
                                         calcPct = recipe.manualIngredients[ing.code];
                                     }
 
+                                    let isAlert = false;
+                                    const minVal = recipe.ingredientMin?.[ing.code];
+                                    const maxVal = recipe.ingredientMax?.[ing.code];
+                                    if (isUsed) {
+                                        if (minVal !== undefined && minVal !== '' && calcPct < parseFloat(minVal)) isAlert = true;
+                                        if (maxVal !== undefined && maxVal !== '' && calcPct > parseFloat(maxVal)) isAlert = true;
+                                    }
+
                                     return (
                                         <tr key={ing.code}
-                                            style={{ background: isUsed ? (idx % 2 === 0 ? '#fff' : '#f8f9fa') : '#f1f5f9', opacity: isUsed ? 1 : 0.6, borderBottom: '1px solid #f3f4f6', cursor: 'context-menu' }}
+                                            style={{ background: isUsed ? (isAlert ? '#fee2e2' : (idx % 2 === 0 ? '#fff' : '#f8f9fa')) : '#f1f5f9', opacity: isUsed ? 1 : 0.6, borderBottom: '1px solid #f3f4f6', cursor: 'context-menu' }}
                                             onContextMenu={e => {
                                                 e.preventDefault();
                                                 setContextMenu({ x: e.clientX, y: e.clientY, code: ing.code });
@@ -521,12 +834,7 @@ export default function RecipeSolver() {
                                                     <input type="checkbox" checked={isUsed} onChange={e => {
                                                         const nextActive = { ...recipe.activeIngredients, [ing.code]: e.target.checked };
                                                         let nextManual = { ...recipe.manualIngredients };
-                                                        if (e.target.checked) {
-                                                            const curSum = Object.keys(nextManual).reduce((acc, c) => (c !== ing.code && nextActive[c] !== false) ? acc + (Number(nextManual[c]) || 0) : acc, 0);
-                                                            if (curSum + (Number(nextManual[ing.code]) || 0) > 100) {
-                                                                nextManual[ing.code] = Math.max(0, 100 - curSum);
-                                                            }
-                                                        }
+                                                        
                                                         setRecipe({ ...recipe, activeIngredients: nextActive, manualIngredients: nextManual });
                                                         runManualCalculation(nextManual, nextActive);
                                                     }} style={{ margin: 0, cursor: 'pointer' }} />
@@ -540,7 +848,7 @@ export default function RecipeSolver() {
                                                     value={
                                                         localPctValues[ing.code] !== undefined
                                                             ? localPctValues[ing.code]
-                                                            : (recipe.manualIngredients[ing.code] !== undefined ? String(recipe.manualIngredients[ing.code]) : '0')
+                                                            : (recipe.manualIngredients[ing.code] !== undefined ? Number(recipe.manualIngredients[ing.code]).toFixed(3) : '0.000')
                                                     }
                                                     onFocus={() => {
                                                         // When focused, seed local value from recipe
@@ -558,32 +866,36 @@ export default function RecipeSolver() {
                                                     onBlur={() => {
                                                         // Commit parsed value to recipe on blur
                                                         const raw = localPctValues[ing.code] ?? String(recipe.manualIngredients[ing.code] || 0);
-                                                        const val = parseFloat(raw) || 0;
-                                                        const curSum = Object.keys(recipe.manualIngredients || {}).reduce((a, c) => {
-                                                            if (c === ing.code || recipe.activeIngredients?.[c] === false) return a;
-                                                            return a + (Number(recipe.manualIngredients[c]) || 0);
-                                                        }, 0);
-                                                        let finalVal = val;
-                                                        if (curSum + val > 100) finalVal = Math.max(0, 100 - curSum);
-                                                        const next = { ...recipe.manualIngredients };
-                                                        next[ing.code] = finalVal;
-                                                        setRecipe({ ...recipe, manualIngredients: next });
-                                                        runManualCalculation(next);
-                                                        // Clear local so display reverts to recipe value
+                                                        let val = Math.round((parseFloat(raw) || 0) * 1000) / 1000;
+                                                        
+                                                        const mVal = recipe.ingredientMax?.[ing.code];
+                                                        if (mVal !== undefined && mVal !== '' && val > parseFloat(mVal)) {
+                                                            val = parseFloat(mVal);
+                                                        }
+
+                                                        if (val > 100) val = 100;
+
+                                                        let next = { ...recipe.manualIngredients };
+                                                        next[ing.code] = val;
+                                                        
+                                                        // Run calculation which will handle auto-balancing
+                                                        runManualCalculation(next, recipe.activeIngredients, recipe.targetWeight);
+                                                        
+                                                        // Clear local so display reverts to balanced recipe value
                                                         setLocalPctValues(prev => { const n = { ...prev }; delete n[ing.code]; return n; });
                                                     }}
                                                     style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none', color: isUsed ? '#b45309' : '#9ca3af', fontWeight: 'bold' }}
                                                     placeholder="0.000"
                                                 />
                                             </td>
-                                            <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: (recipe.ingredientMin && recipe.ingredientMin[ing.code]) ? '#fff9c4' : 'transparent' }}>
+                                            <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: 'transparent' }}>
                                                 <input type="number" value={recipe.ingredientMin?.[ing.code] ?? ''} onChange={e => {
                                                     const next = { ...(recipe.ingredientMin || {}) };
                                                     next[ing.code] = e.target.value;
                                                     setRecipe({ ...recipe, ingredientMin: next });
                                                 }} style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
                                             </td>
-                                            <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: (recipe.ingredientMax && recipe.ingredientMax[ing.code]) ? '#fff9c4' : 'transparent' }}>
+                                            <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: 'transparent' }}>
                                                 <input type="number" value={recipe.ingredientMax?.[ing.code] ?? ''} onChange={e => {
                                                     const next = { ...(recipe.ingredientMax || {}) };
                                                     next[ing.code] = e.target.value;
@@ -600,7 +912,7 @@ export default function RecipeSolver() {
                 </div>
 
                 {/* Analysis Right */}
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: '30%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: '30%', borderRight: selectedNutrientKey ? '2px solid #ccc' : 'none' }}>
                     <div style={{ background: '#e9ecef', padding: '8px 12px', fontWeight: 'bold', fontSize: '13px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#495057' }}>
                         Nutrient Analysis
                     </div>
@@ -610,7 +922,20 @@ export default function RecipeSolver() {
                                 <tr>
                                     <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', textAlign: 'left', fontWeight: 'bold', color: '#495057' }}>Code</th>
                                     <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', textAlign: 'left', fontWeight: 'bold', color: '#495057' }}>Description</th>
-                                    <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', textAlign: 'left', fontWeight: 'bold', color: '#495057' }}>Type</th>
+                                    <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', textAlign: 'left', fontWeight: 'bold', color: '#495057' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <span>Type</span>
+                                            <select 
+                                                value={nutDisplayMode} 
+                                                onChange={e => setNutDisplayMode(e.target.value)}
+                                                style={{ fontSize: '10px', padding: '1px', borderRadius: '3px', border: '1px solid #ccc', background: '#fff' }}
+                                            >
+                                                <option value="as-fed">As-fed</option>
+                                                <option value="dm">On DM</option>
+                                                <option value="reference">Reference</option>
+                                            </select>
+                                        </div>
+                                    </th>
                                     <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', fontWeight: 'bold', color: '#495057' }}>Value</th>
                                     <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', fontWeight: 'bold', color: '#495057' }}>Lower limit</th>
                                     <th style={{ resize: 'horizontal', overflow: 'hidden', borderBottom: '1px solid #ccc', borderRight: '1px solid #e5e7eb', padding: '6px 8px', fontWeight: 'bold', color: '#495057' }}>Upper limit</th>
@@ -618,22 +943,51 @@ export default function RecipeSolver() {
                             </thead>
                             <tbody>
                                 {allNutrients.map((n, idx) => {
-                                    const val = calculatedNutrients[n.key];
+                                    const asFedVal = calculatedNutrients[n.key];
+                                    const recipeMoisture = calculatedNutrients['Moisture'] || 0;
+                                    const recipeDM = calculatedNutrients['DM'] || (100 - recipeMoisture);
+                                    
+                                    let displayVal = asFedVal;
+                                    let typeLabel = 'On Product';
+
+                                    if (nutDisplayMode === 'dm') {
+                                        typeLabel = 'On DM';
+                                        displayVal = recipeDM > 0 ? (asFedVal / recipeDM) * 100 : 0;
+                                    } else if (nutDisplayMode === 'reference') {
+                                        typeLabel = `On ${refDMValue}% DM`;
+                                        displayVal = recipeDM > 0 ? (asFedVal / recipeDM) * refDMValue : 0;
+                                    }
+
+                                    // Moisture and DM themselves should probably always show as-fed or be handled specially
+                                    if (n.key === 'Moisture' || n.key === 'DM') {
+                                        displayVal = asFedVal;
+                                        typeLabel = 'Base';
+                                    }
+
                                     const bound = recipe.constraints[n.key] || { min: '', max: '' };
 
                                     let alertMin = false;
                                     let alertMax = false;
-                                    if (bound.min && val < parseFloat(bound.min)) alertMin = true;
-                                    if (bound.max && val > parseFloat(bound.max)) alertMax = true;
+                                    if (bound.min && asFedVal < parseFloat(bound.min)) alertMin = true;
+                                    if (bound.max && asFedVal > parseFloat(bound.max)) alertMax = true;
                                     const alert = alertMin || alertMax;
 
                                     return (
-                                        <tr key={n.key} style={{ background: alert ? '#f8d7da' : (idx % 2 === 0 ? '#fff' : '#f8f9fa'), borderBottom: '1px solid #f3f4f6', color: alert ? '#721c24' : 'inherit' }}>
+                                        <tr 
+                                            key={n.key} 
+                                            onClick={() => setSelectedNutrientKey(n.key)}
+                                            style={{ 
+                                                background: selectedNutrientKey === n.key ? '#bae6fd' : (alert ? '#f8d7da' : (idx % 2 === 0 ? '#fff' : '#f8f9fa')), 
+                                                borderBottom: '1px solid #f3f4f6', 
+                                                color: alert ? '#721c24' : 'inherit',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
                                             <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: alert ? '#721c24' : '#4b5563' }}>FS_{n.key.substring(0, 4).toUpperCase()}</td>
                                             <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: alert ? '#721c24' : '#111827' }}>{n.label} <span style={{ opacity: 0.6 }}>({n.unit})</span></td>
-                                            <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: alert ? '#721c24' : '#6b7280' }}>On product</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: alert ? '#721c24' : '#6b7280', fontSize: '10px' }}>{typeLabel}</td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', fontWeight: 'bold', color: alert ? '#721c24' : '#111827' }}>
-                                                {val !== undefined && val !== null && !isNaN(val) ? val.toFixed(3) : '-'}
+                                                {displayVal !== undefined && displayVal !== null && !isNaN(displayVal) ? displayVal.toFixed(3) : '-'}
                                                 {alertMin && ' ↓'}
                                                 {alertMax && ' ↑'}
                                             </td>
@@ -650,6 +1004,76 @@ export default function RecipeSolver() {
                         </table>
                     </div>
                 </div>
+
+                {/* Nutrient Detail Pane (Only visible when a nutrient is selected) */}
+                {selectedNutrientKey && (() => {
+                    const selectedNutrientInfo = allNutrients.find(n => n.key === selectedNutrientKey);
+                    const finalNutrientValue = calculatedNutrients[selectedNutrientKey] || 0;
+                    
+                    const details = (recipe.addedIngredients || [])
+                        .filter(code => recipe.activeIngredients?.[code] !== false)
+                        .map(code => {
+                            const ing = ingredients.find(i => i.code === code);
+                            if (!ing) return null;
+                            let amt = 0;
+                            if (result && result[code] !== undefined) {
+                                 amt = result[code];
+                            } else {
+                                 const pct = recipe.manualIngredients[code] || 0;
+                                 amt = (pct / 100) * recipe.targetWeight;
+                            }
+                            if (amt <= 0) return null;
+                            
+                            const pct = (amt / recipe.targetWeight) * 100;
+                            const analysis = ing.nutrients[selectedNutrientKey] || 0;
+                            const contributionAbs = analysis * (amt / recipe.targetWeight);
+                            const contributionPct = finalNutrientValue > 0 ? (contributionAbs / finalNutrientValue) * 100 : 0;
+                            
+                            return { code, name: ing.name, weight: amt, pct, analysis, contributionAbs, contributionPct };
+                        })
+                        .filter(Boolean)
+                        .sort((a, b) => b.contributionAbs - a.contributionAbs); // Sort by highest contribution
+
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1.5, minHeight: 0, minWidth: '30%', overflow: 'hidden' }}>
+                            <div style={{ background: '#e9ecef', padding: '8px 12px', fontWeight: 'bold', fontSize: '13px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#495057' }}>
+                                <span>FS_{selectedNutrientKey.substring(0,4).toUpperCase()} - {selectedNutrientInfo.label} ({finalNutrientValue.toFixed(3)} {selectedNutrientInfo.unit})</span>
+                                <X size={16} style={{ cursor: 'pointer', color: '#6b7280' }} onClick={() => setSelectedNutrientKey(null)} />
+                            </div>
+                            <div style={{ overflowY: 'auto', flex: 1, background: '#fff' }}>
+                                <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', textAlign: 'right' }}>
+                                    <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1, boxShadow: '0 1px 0 #ccc' }}>
+                                        <tr>
+                                            <th style={{ padding: '6px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Code</th>
+                                            <th style={{ padding: '6px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Description</th>
+                                            <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Weight (kg)</th>
+                                            <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>%</th>
+                                            <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Analysis</th>
+                                            <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Contribution (abs)</th>
+                                            <th style={{ padding: '6px 8px', color: '#495057' }}>Contribution (%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {details.map((d, idx) => (
+                                            <tr key={d.code} style={{ background: idx % 2 === 0 ? '#fff' : '#f8f9fa', borderBottom: '1px solid #f3f4f6' }}>
+                                                <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: '#d97706', fontWeight: 'bold' }}>{d.code}</td>
+                                                <td style={{ padding: '4px 8px', textAlign: 'left', borderRight: '1px solid #e5e7eb', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{d.name}</td>
+                                                <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', color: '#4b5563' }}>{d.weight.toFixed(3)}</td>
+                                                <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', color: '#4b5563' }}>{d.pct.toFixed(3)}</td>
+                                                <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', color: '#4b5563' }}>{d.analysis.toFixed(2)}</td>
+                                                <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', color: '#4b5563' }}>{d.contributionAbs.toFixed(5)}</td>
+                                                <td style={{ padding: '4px 8px', color: '#4b5563' }}>{d.contributionPct.toFixed(2)}</td>
+                                            </tr>
+                                        ))}
+                                        {details.length === 0 && (
+                                            <tr><td colSpan="7" style={{ padding: '16px', textAlign: 'center', color: '#9ca3af' }}>No contributing ingredients</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
 
             {/* Right-click Context Menu */}

@@ -84,7 +84,6 @@ export default function Ingredients() {
             const val = String(Math.round(me_atwater * 100) / 100);
             newNutrients['ME_NRC_06'] = val;
             newNutrients['Atwater_Modified'] = val;
-            newNutrients['Energy'] = val;
         }
 
         // Recalculate Amino Acid Sums
@@ -97,6 +96,15 @@ export default function Ingredients() {
 
             newNutrients['MET_CYS'] = String(Math.round((met + cys) * 1000) / 1000);
             newNutrients['PHE_TYR'] = String(Math.round((phe + tyr) * 1000) / 1000);
+        }
+
+        // Recalculate Ca/P Ratio
+        const mineralKeys = ['Ca', 'P'];
+        if (triggerKey === null || mineralKeys.includes(triggerKey)) {
+            const ca = num('Ca');
+            const p = num('P');
+            const ratio = p > 0 ? ca / p : 0;
+            newNutrients['Ca_P_Ratio'] = String(Math.round(ratio * 100) / 100);
         }
 
         return newNutrients;

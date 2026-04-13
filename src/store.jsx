@@ -4,7 +4,9 @@ import {
     onAuthStateChanged,
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
-    signOut
+    signOut,
+    setPersistence,
+    browserSessionPersistence
 } from 'firebase/auth';
 import {
     doc,
@@ -34,16 +36,23 @@ export const AppProvider = ({ children }) => {
 
     // Listen to Auth State
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            setCurrentUser(user);
-            if (!user) {
-                setIngredients(defaultIngredients);
-                setPriceLists(defaultPrices);
-                setRecipes([]);
+        setPersistence(auth, browserSessionPersistence)
+            .then(() => {
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    setCurrentUser(user);
+                    if (!user) {
+                        setIngredients(defaultIngredients);
+                        setPriceLists(defaultPrices);
+                        setRecipes([]);
+                        setLoading(false);
+                    }
+                });
+                return unsubscribe;
+            })
+            .catch((error) => {
+                console.error("Auth persistence error:", error);
                 setLoading(false);
-            }
-        });
-        return unsubscribe;
+            });
     }, []);
 
     // Listen to Firestore Data when user is logged in

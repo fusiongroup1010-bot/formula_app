@@ -51,7 +51,7 @@ function AppContent() {
           <div className="nav-item" style={{ cursor: 'default' }}>
             <User size={20} />
             <span style={{ fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {currentUser.username}
+              {currentUser.email}
             </span>
           </div>
           <div className="nav-item" onClick={logout} style={{ color: 'var(--danger-color)' }}>

@@ -15,7 +15,6 @@ export const nutrientGroups = [
     {
         name: 'Energy',
         items: [
-            { key: 'Energy', label: 'Energy', unit: 'kcal/kg' },
             { key: 'GE', label: 'GE', unit: 'kcal/kg' },
             { key: 'ME_NRC_06', label: 'ME NRC 06', unit: 'kcal/kg' },
             { key: 'Atwater_Modified', label: 'Atwater Modified', unit: 'kcal/kg' },
@@ -46,6 +45,10 @@ export const nutrientGroups = [
         name: 'Fibers',
         items: [
             { key: 'Cellulose', label: 'Cellulose', unit: '%' },
+            { key: 'NDF', label: 'NDF', unit: '%' },
+            { key: 'ADF', label: 'ADF', unit: '%' },
+            { key: 'Lignine', label: 'Lignine', unit: '%' },
+            { key: 'Hemicellulose', label: 'Hemicellulose', unit: '%' },
         ]
     },
     {
@@ -72,6 +75,7 @@ export const nutrientGroups = [
             { key: 'Cl', label: 'Chloride (Cl)', unit: '%' },
             { key: 'Mg', label: 'Magnesium (Mg)', unit: '%' },
             { key: 'S', label: 'Sulfur (S)', unit: '%' },
+            { key: 'Ca_P_Ratio', label: 'Ca/P Ratio', unit: 'Ratio' },
         ]
     },
     {
@@ -91,6 +95,15 @@ export const nutrientGroups = [
             { key: 'Choline', label: 'Choline', unit: 'mg/kg' },
             { key: 'Flour', label: 'Flour', unit: 'ppm' },
             { key: 'Histamin', label: 'Histamin', unit: 'ppm' },
+            { key: 'Potassium_sorbate', label: 'Potassium Sorbate', unit: 'ppm' },
+            { key: 'Alumium', label: 'Alumium', unit: 'ppm' },
+            { key: 'Acid_citric', label: 'Acid Citric', unit: 'ppm' },
+            { key: 'BHA', label: 'BHA', unit: 'ppm' },
+            { key: 'BHT', label: 'BHT', unit: 'ppm' },
+            { key: 'Aflatoxin_B1', label: 'Aflatoxin B1', unit: 'ppb' },
+            { key: 'Propyl_Gallate', label: 'Propyl Gallate', unit: 'ppm' },
+            { key: 'Ethoxyquin', label: 'Ethoxyquin', unit: 'ppm' },
+            { key: 'TVBN', label: 'TVBN', unit: 'mg/100g' },
         ]
     },
     {
