@@ -56,6 +56,7 @@ export const nutrientGroups = [
         items: [
             { key: 'Omega_6', label: 'Omega 6', unit: '%' },
             { key: 'Omega_3', label: 'Omega 3', unit: '%' },
+            { key: 'Omega_6_3_Ratio', label: 'Omega 6/3 Ratio', unit: 'Ratio' },
             { key: 'Linoleic_Acid', label: 'Linoleic Acid', unit: '%' },
             { key: 'Alpha_Linolenic_Acid', label: 'Alpha Linolenic Acid', unit: '%' },
             { key: 'Arachidonic_Acid', label: 'Arachidonic Acid', unit: '%' },
@@ -70,12 +71,12 @@ export const nutrientGroups = [
         items: [
             { key: 'Ca', label: 'Calcium (Ca)', unit: '%' },
             { key: 'P', label: 'Phosphorus (P)', unit: '%' },
+            { key: 'Ca_P_Ratio', label: 'Ca/P Ratio', unit: 'Ratio' },
             { key: 'Na', label: 'Sodium (Na)', unit: '%' },
             { key: 'K', label: 'Potassium (K)', unit: '%' },
             { key: 'Cl', label: 'Chloride (Cl)', unit: '%' },
             { key: 'Mg', label: 'Magnesium (Mg)', unit: '%' },
             { key: 'S', label: 'Sulfur (S)', unit: '%' },
-            { key: 'Ca_P_Ratio', label: 'Ca/P Ratio', unit: 'Ratio' },
         ]
     },
     {
@@ -110,7 +111,7 @@ export const nutrientGroups = [
         name: 'Vitamins',
         items: [
             { key: 'Vitamin_A', label: 'Vitamin A', unit: 'IU/kg' },
-            { key: 'Vitamin_D', label: 'Vitamin D', unit: 'IU/kg' },
+            { key: 'Vitamin_D', label: 'Vitamin D3', unit: 'IU/kg' },
             { key: 'Vitamin_E', label: 'Vitamin E', unit: 'IU/kg' },
             { key: 'Vitamin_K', label: 'Vitamin K', unit: 'mg/kg' },
             { key: 'Vitamin_B1', label: 'Vitamin B1', unit: 'mg/kg' },

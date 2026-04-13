@@ -247,6 +247,12 @@ export default function RecipeSolver() {
             totals['Ca_P_Ratio'] = 0;
         }
 
+        if (totals['Omega_3'] > 0) {
+            totals['Omega_6_3_Ratio'] = totals['Omega_6'] / totals['Omega_3'];
+        } else {
+            totals['Omega_6_3_Ratio'] = 0;
+        }
+
         return totals;
     }, [result, ingredients, recipe.targetWeight]);
 
