@@ -276,10 +276,18 @@ export default function RecipeSolver() {
         const totalCostResult = currentResult.result || 0;
         const pricePerKg = recipe.targetWeight > 0 ? (totalCostResult / recipe.targetWeight).toFixed(0) : '0';
 
+        // Remove Korean characters and anything following them
+        const cleanName = (name) => {
+            if (!name) return "";
+            const koreanMatch = name.match(/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uD7B0-\uD7FF]/);
+            return koreanMatch ? name.substring(0, koreanMatch.index).trim() : name;
+        };
+        const displayName = cleanName(recipe.name);
+
         // Sheet 1: Composition (Layout matched to PDF)
         const compRows = [
             ["FUSION FORMULA REPORT", "", "", "", ""],
-            ["Formula Name:", recipe.name, "", "Date:", dateStr],
+            ["Formula Name:", displayName, "", "Date:", dateStr],
             ["Profile:", recipe.referenceProfile, "", "Site:", "FUSION_VN"],
             ["Price Month:", recipe.priceMonth, "", "Created By:", currentUser?.email || ""],
             ["Batch Weight (kg):", recipe.targetWeight, "", "Batch Price (VND/kg):", Number(pricePerKg).toLocaleString('vi-VN')],
@@ -353,7 +361,7 @@ export default function RecipeSolver() {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws1, "Formula Composition");
         XLSX.utils.book_append_sheet(wb, ws2, "Nutrient Analytics");
-        XLSX.writeFile(wb, `Formula_${recipe.name.replace(/\s+/g, '_')}.xlsx`);
+        XLSX.writeFile(wb, `Formula_${displayName.replace(/\s+/g, '_')}.xlsx`);
     };
 
     const exportPDF = () => {
@@ -403,10 +411,19 @@ export default function RecipeSolver() {
         // ── Formula title ─────────────────────────────────────────────
         const priceMonth = recipe.priceMonth || '';
         const profile = recipe.referenceProfile || '';
+        
+        // Remove Korean characters and anything following them
+        const cleanName = (name) => {
+            if (!name) return "";
+            const koreanMatch = name.match(/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uD7B0-\uD7FF]/);
+            return koreanMatch ? name.substring(0, koreanMatch.index).trim() : name;
+        };
+        const displayName = cleanName(recipe.name);
+
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(15);
         doc.setTextColor(180, 30, 30);
-        doc.text(`${recipe.name} - ${profile}`, margin, 33);
+        doc.text(`${displayName} - ${profile}`, margin, 33);
 
         // ── Summary grid ──────────────────────────────────────────────
         const totalCostResult = currentResult.result || 0;
@@ -562,7 +579,7 @@ export default function RecipeSolver() {
             doc.text(lines, margin, currentY);
         }
 
-        doc.save(`Formula_${recipe.name.replace(/\s+/g, '_')}.pdf`);
+        doc.save(`Formula_${displayName.replace(/\s+/g, '_')}.pdf`);
     };
 
     const handleConstraintChange = (key, type, val) => {
