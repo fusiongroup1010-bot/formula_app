@@ -107,6 +107,15 @@ export default function Ingredients() {
             newNutrients['Ca_P_Ratio'] = String(Math.round(ratio * 100) / 100);
         }
 
+        // Recalculate Omega 6/3 Ratio
+        const omegaKeys = ['Omega_6', 'Omega_3'];
+        if (triggerKey === null || omegaKeys.includes(triggerKey)) {
+            const o6 = num('Omega_6');
+            const o3 = num('Omega_3');
+            const ratio = o3 > 0 ? o6 / o3 : 0;
+            newNutrients['Omega_6_3_Ratio'] = String(Math.round(ratio * 100) / 100);
+        }
+
         return newNutrients;
     };
 
@@ -355,6 +364,8 @@ export default function Ingredients() {
                                     <input
                                         type="text"
                                         className="form-input"
+                                        style={['NFE', 'GE', 'ME_NRC_06', 'Atwater_Modified', 'MET_CYS', 'PHE_TYR', 'Ca_P_Ratio', 'Omega_6_3_Ratio'].includes(nut.key) ? { background: 'rgba(0,0,0,0.05)', cursor: 'not-allowed' } : {}}
+                                        readOnly={['NFE', 'GE', 'ME_NRC_06', 'Atwater_Modified', 'MET_CYS', 'PHE_TYR', 'Ca_P_Ratio', 'Omega_6_3_Ratio'].includes(nut.key)}
                                         value={formData.nutrients[nut.key] === undefined ? '' : formData.nutrients[nut.key]}
                                         onChange={e => {
                                             const val = e.target.value.replace(',', '.');
