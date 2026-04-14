@@ -62,9 +62,15 @@ function AppContent() {
       </div>
 
       <div className="main-content">
-        {activeTab === 'recipes' && <RecipeSolver />}
-        {activeTab === 'ingredients' && <Ingredients />}
-        {activeTab === 'pricelist' && <PriceList />}
+        <div style={{ display: activeTab === 'recipes' ? 'block' : 'none' }}>
+          <RecipeSolver />
+        </div>
+        <div style={{ display: activeTab === 'ingredients' ? 'block' : 'none' }}>
+          <Ingredients />
+        </div>
+        <div style={{ display: activeTab === 'pricelist' ? 'block' : 'none' }}>
+          <PriceList />
+        </div>
       </div>
     </div>
   );
