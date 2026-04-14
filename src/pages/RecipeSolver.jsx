@@ -254,8 +254,8 @@ export default function RecipeSolver() {
     const exportExcel = () => {
         let currentResult = result;
         if (!currentResult || !currentResult.feasible) {
-            let totalCost = 0;
             const res = { feasible: true, result: 0, isManual: true };
+            let totalCost = 0;
             Object.keys(recipe.manualIngredients || {}).forEach(code => {
                 if (recipe.activeIngredients?.[code] !== false) {
                     const percent = recipe.manualIngredients[code];
@@ -271,59 +271,87 @@ export default function RecipeSolver() {
             currentResult = res;
         }
 
-        const data = [];
-        ingredients.forEach(ing => {
-            const amt = currentResult[ing.code] || 0;
-            if (amt > 0) {
-                const price = currentPrices[ing.code] || 0;
-                data.push({
-                    Code: ing.code,
-                    Ingredient: ing.name,
-                    Group: ing.group,
-                    'Amount (kg)': amt.toFixed(3),
-                    'Ratio (%)': ((amt / recipe.targetWeight) * 100).toFixed(3),
-                    'Unit Price (VND)': price.toLocaleString('en-US'),
-                    'Cost (VND)': Math.round(amt * price).toLocaleString('en-US')
-                });
-            }
+        const today = new Date();
+        const dateStr = today.toLocaleDateString('vi-VN');
+        const totalCostResult = currentResult.result || 0;
+        const pricePerKg = recipe.targetWeight > 0 ? (totalCostResult / recipe.targetWeight).toFixed(0) : '0';
+
+        // Sheet 1: Composition (Layout matched to PDF)
+        const compRows = [
+            ["FUSION FORMULA REPORT", "", "", "", ""],
+            ["Formula Name:", recipe.name, "", "Date:", dateStr],
+            ["Profile:", recipe.referenceProfile, "", "Site:", "FUSION_VN"],
+            ["Price Month:", recipe.priceMonth, "", "Created By:", currentUser?.email || ""],
+            ["Batch Weight (kg):", recipe.targetWeight, "", "Batch Price (VND/kg):", Number(pricePerKg).toLocaleString('vi-VN')],
+            [""], // Spacer
+            ["Code", "Description", "%", "Batch kg", "Accumulated kg"] // Table Header
+        ];
+
+        let accumulated = 0;
+        let totalPct = 0;
+        let totalBatch = 0;
+
+        const sortedAdded = [...(recipe.addedIngredients || [])].sort((a, b) => {
+            const getLocalPct = (code) => {
+                if (currentResult && !currentResult.isManual && currentResult[code] !== undefined) return (currentResult[code] / recipe.targetWeight) * 100;
+                return recipe.manualIngredients[code] || 0;
+            };
+            return getLocalPct(b) - getLocalPct(a);
         });
 
-        const totalCost = currentResult.result;
-        data.push({ Code: 'TOTAL', Ingredient: '', Group: '', 'Amount (kg)': recipe.targetWeight.toFixed(3), 'Ratio (%)': '100.000%', 'Unit Price (VND)': '', 'Cost (VND)': Math.round(totalCost).toLocaleString('en-US') });
-
-        const ws1 = XLSX.utils.json_to_sheet(data);
-
-        const tempNutrients = {};
-        allNutrients.forEach(n => tempNutrients[n.key] = 0);
-        ingredients.forEach(ing => {
+        sortedAdded.forEach(code => {
+            const ing = ingredients.find(i => i.code === code);
+            if (!ing) return;
             const amt = currentResult[ing.code] || 0;
-            if (amt > 0) {
-                allNutrients.forEach(n => {
-                    tempNutrients[n.key] += (ing.nutrients[n.key] || 0) * (amt / recipe.targetWeight);
-                });
-            }
+            if (amt <= 0) return;
+            const pct = (amt / recipe.targetWeight) * 100;
+            accumulated += amt;
+            totalPct += pct;
+            totalBatch += amt;
+            compRows.push([
+                ing.code,
+                ing.name,
+                Number(pct.toFixed(3)),
+                Number(amt.toFixed(3)),
+                Number(accumulated.toFixed(3))
+            ]);
         });
 
-        // Nutrients Sheet
-        const nutData = allNutrients.map(n => {
-            const val = tempNutrients[n.key];
+        compRows.push(["TOTAL:", "", Number(totalPct.toFixed(3)), Number(totalBatch.toFixed(3)), Number(accumulated.toFixed(3))]);
+        compRows.push([""]);
+        compRows.push(["Remarks:", recipe.remarks || ""]);
+
+        const ws1 = XLSX.utils.aoa_to_sheet(compRows);
+
+        // Sheet 2: Nutrient Analysis
+        const nutRows = [
+            ["NUTRIENT ANALYSIS", "", "", "", "", ""],
+            ["Formula:", recipe.name],
+            ["Date:", dateStr],
+            [""],
+            ["Nutrient", "Unit", "Value", "Lower limit", "Upper limit", "Status"]
+        ];
+
+        allNutrients.forEach(n => {
+            const val = calculatedNutrients[n.key];
             const bound = recipe.constraints[n.key] || {};
             let status = 'OK';
             if (bound.min && val < parseFloat(bound.min)) status = 'Below Min';
             if (bound.max && val > parseFloat(bound.max)) status = 'Exceeds Max';
-            return {
-                Nutrient: n.label,
-                Unit: n.unit,
-                Value: val.toFixed(3),
-                Min: bound.min || '-',
-                Max: bound.max || '-',
-                Status: status
-            };
+            nutRows.push([
+                n.label,
+                n.unit,
+                Number(val.toFixed(3)),
+                bound.min || '-',
+                bound.max || '-',
+                status
+            ]);
         });
-        const ws2 = XLSX.utils.json_to_sheet(nutData);
+
+        const ws2 = XLSX.utils.aoa_to_sheet(nutRows);
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws1, "Recipe Composition");
+        XLSX.utils.book_append_sheet(wb, ws1, "Formula Composition");
         XLSX.utils.book_append_sheet(wb, ws2, "Nutrient Analytics");
         XLSX.writeFile(wb, `Formula_${recipe.name.replace(/\s+/g, '_')}.xlsx`);
     };
