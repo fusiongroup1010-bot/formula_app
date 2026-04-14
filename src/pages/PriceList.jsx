@@ -70,6 +70,31 @@ export default function PriceList() {
                         </select>
                     </div>
                 </div>
+                <div className="form-group" style={{ margin: 0, borderLeft: '1px solid var(--border-color)', paddingLeft: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label className="form-label">Copy Prices From</label>
+                        <select 
+                            className="form-input" 
+                            style={{ width: '150px' }}
+                            defaultValue=""
+                            id="copy-from-select"
+                        >
+                            <option value="" disabled>Select Month...</option>
+                            {Object.keys(priceLists).sort().reverse().map(m => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <button className="btn btn-secondary" style={{ padding: '0.75rem 1rem' }} onClick={() => {
+                        const source = document.getElementById('copy-from-select').value;
+                        if (source && priceLists[source]) {
+                            setCurrentPrices({ ...priceLists[source] });
+                        } else {
+                            alert("Please select a source month to copy from.");
+                        }
+                    }}>Copy</button>
+                </div>
+
                 <div className="form-group" style={{ margin: 0, marginLeft: 'auto', display: 'flex', flexDirection: 'column' }}>
                     <label className="form-label">Search</label>
                     <div style={{ position: 'relative' }}>
