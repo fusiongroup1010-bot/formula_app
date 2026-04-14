@@ -654,6 +654,50 @@ export default function RecipeSolver() {
         }
     };
 
+    const handleGridKeyDown = (e, row, col) => {
+        const key = e.key;
+        if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) return;
+
+        let nextRow = row;
+        let nextCol = col;
+
+        if (key === 'ArrowUp') nextRow--;
+        else if (key === 'ArrowDown' || key === 'Enter') nextRow++;
+        else if (key === 'ArrowLeft') nextCol--;
+        else if (key === 'ArrowRight') nextCol++;
+
+        const getCellId = (r, c) => {
+            if (c === 0) return `comp-pct-${r}`;
+            if (c === 1) return `comp-min-${r}`;
+            if (c === 2) return `comp-max-${r}`;
+            if (c === 3) return `analysis-min-${r}`;
+            if (c === 4) return `analysis-max-${r}`;
+            return null;
+        };
+
+        // Horizontal wrap/limit
+        if (nextCol < 0) nextCol = 0;
+        if (nextCol > 4) nextCol = 4;
+
+        // Row boundaries depend on column
+        const maxCompRow = (recipe.addedIngredients || []).length - 1;
+        const maxAnalysisRow = allNutrients.length - 1;
+
+        const targetMaxRow = nextCol <= 2 ? maxCompRow : maxAnalysisRow;
+        if (nextRow < 0) nextRow = 0;
+        if (nextRow > targetMaxRow) nextRow = targetMaxRow;
+
+        const nextId = getCellId(nextRow, nextCol);
+        if (nextId) {
+            e.preventDefault();
+            const el = document.getElementById(nextId);
+            if (el) {
+                el.focus();
+                if (el.select) el.select();
+            }
+        }
+    };
+
     if (viewMode === 'list') {
         return (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', background: '#fff', color: '#333', overflow: 'hidden', margin: '-2rem', fontFamily: 'Arial, sans-serif' }}>
@@ -887,6 +931,7 @@ export default function RecipeSolver() {
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: isUsed ? '#fff9c4' : 'transparent' }}>
                                                 <input
+                                                    id={`comp-pct-${idx}`}
                                                     type="text"
                                                     inputMode="decimal"
                                                     disabled={!isUsed}
@@ -895,11 +940,13 @@ export default function RecipeSolver() {
                                                             ? localPctValues[ing.code]
                                                             : (recipe.manualIngredients[ing.code] !== undefined ? Number(recipe.manualIngredients[ing.code]).toFixed(3) : '0.000')
                                                     }
-                                                    onFocus={() => {
+                                                    onFocus={e => {
                                                         // When focused, seed local value from recipe
                                                         const cur = recipe.manualIngredients[ing.code];
                                                         setLocalPctValues(prev => ({ ...prev, [ing.code]: cur !== undefined ? String(cur) : '0' }));
+                                                        e.target.select();
                                                     }}
+                                                    onKeyDown={e => handleGridKeyDown(e, idx, 0)}
                                                     onChange={e => {
                                                         // Allow typing freely (including '5.' or '5.2')
                                                         let raw = e.target.value.replace(',', '.'); // convert comma -> period
@@ -934,14 +981,14 @@ export default function RecipeSolver() {
                                                 />
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: 'transparent' }}>
-                                                <input type="number" value={recipe.ingredientMin?.[ing.code] ?? ''} onChange={e => {
+                                                <input id={`comp-min-${idx}`} type="number" value={recipe.ingredientMin?.[ing.code] ?? ''} onFocus={e => e.target.select()} onKeyDown={e => handleGridKeyDown(e, idx, 1)} onChange={e => {
                                                     const next = { ...(recipe.ingredientMin || {}) };
                                                     next[ing.code] = e.target.value;
                                                     setRecipe({ ...recipe, ingredientMin: next });
                                                 }} style={{ width: '60px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: 'transparent' }}>
-                                                <input type="number" value={recipe.ingredientMax?.[ing.code] ?? ''} onChange={e => {
+                                                <input id={`comp-max-${idx}`} type="number" value={recipe.ingredientMax?.[ing.code] ?? ''} onFocus={e => e.target.select()} onKeyDown={e => handleGridKeyDown(e, idx, 2)} onChange={e => {
                                                     const next = { ...(recipe.ingredientMax || {}) };
                                                     next[ing.code] = e.target.value;
                                                     setRecipe({ ...recipe, ingredientMax: next });
@@ -1037,10 +1084,10 @@ export default function RecipeSolver() {
                                                 {alertMax && ' ↑'}
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: (bound.min !== undefined && bound.min !== null && bound.min !== '') ? '#fdf8f5' : 'transparent' }}>
-                                                <input type="number" value={bound.min === null ? '' : bound.min} step="0.01" onChange={e => handleConstraintChange(n.key, 'min', e.target.value)} style={{ width: '50px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
+                                                <input id={`analysis-min-${idx}`} type="number" value={bound.min === null ? '' : bound.min} step="0.01" onFocus={e => e.target.select()} onKeyDown={e => handleGridKeyDown(e, idx, 3)} onChange={e => handleConstraintChange(n.key, 'min', e.target.value)} style={{ width: '50px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
                                             </td>
                                             <td style={{ padding: '4px 8px', borderRight: '1px solid #e5e7eb', background: (bound.max !== undefined && bound.max !== null && bound.max !== '') ? '#fdf8f5' : 'transparent' }}>
-                                                <input type="number" value={bound.max === null ? '' : bound.max} step="0.01" onChange={e => handleConstraintChange(n.key, 'max', e.target.value)} style={{ width: '50px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
+                                                <input id={`analysis-max-${idx}`} type="number" value={bound.max === null ? '' : bound.max} step="0.01" onFocus={e => e.target.select()} onKeyDown={e => handleGridKeyDown(e, idx, 4)} onChange={e => handleConstraintChange(n.key, 'max', e.target.value)} style={{ width: '50px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '11px', outline: 'none' }} placeholder="" />
                                             </td>
                                         </tr>
                                     )
