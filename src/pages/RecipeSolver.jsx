@@ -288,9 +288,9 @@ export default function RecipeSolver() {
         const compRows = [
             ["FUSION FORMULA REPORT", "", "", "", ""],
             ["Formula Name:", displayName, "", "Date:", dateStr],
-            ["Profile:", recipe.referenceProfile, "", "Site:", "FUSION_VN"],
-            ["Price Month:", recipe.priceMonth, "", "Created By:", currentUser?.email || ""],
-            ["Batch Weight (kg):", recipe.targetWeight, "", "Batch Price (VND/kg):", Number(pricePerKg).toLocaleString('vi-VN')],
+            ["Site:", "FUSION_VN", "", "Created By:", currentUser?.email || ""],
+            ["Price Month:", recipe.priceMonth, "", "Batch Weight (kg):", recipe.targetWeight],
+            ["Batch Price (VND/kg):", Number(pricePerKg).toLocaleString('vi-VN')],
             [""], // Spacer
             ["Code", "Description", "%", "Batch kg", "Accumulated kg"] // Table Header
         ];
@@ -423,7 +423,7 @@ export default function RecipeSolver() {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(15);
         doc.setTextColor(180, 30, 30);
-        doc.text(`${displayName} - ${profile}`, margin, 33);
+        doc.text(`${displayName}`, margin, 33);
 
         // ── Summary grid ──────────────────────────────────────────────
         const totalCostResult = currentResult.result || 0;
