@@ -31,6 +31,7 @@ export const AppProvider = ({ children }) => {
     const [ingredients, setIngredients] = useState([]);
     const [priceLists, setPriceLists] = useState({});
     const [recipes, setRecipes] = useState([]);
+    const [folders, setFolders] = useState([]);
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -44,6 +45,7 @@ export const AppProvider = ({ children }) => {
                         setIngredients(defaultIngredients);
                         setPriceLists(defaultPrices);
                         setRecipes([]);
+                        setFolders([]);
                         setLoading(false);
                     }
                 });
@@ -66,9 +68,10 @@ export const AppProvider = ({ children }) => {
                 setIngredients(data.ingredients || defaultIngredients);
                 setPriceLists(data.priceLists || defaultPrices);
                 setRecipes(data.recipes || []);
+                setFolders(data.folders || []);
             } else {
                 // Initialize default data for new user
-                saveToCloud(defaultIngredients, defaultPrices, []);
+                saveToCloud(defaultIngredients, defaultPrices, [], []);
             }
             setLoading(false);
         });
@@ -76,13 +79,14 @@ export const AppProvider = ({ children }) => {
         return unsubscribe;
     }, [currentUser]);
 
-    const saveToCloud = async (newIng, newPrices, newRecipes) => {
+    const saveToCloud = async (newIng, newPrices, newRecipes, newFolders) => {
         if (!currentUser) return;
         try {
             await setDoc(doc(db, 'users_data', currentUser.uid), {
                 ingredients: newIng || ingredients,
                 priceLists: newPrices || priceLists,
                 recipes: newRecipes || recipes,
+                folders: newFolders || folders || [],
                 lastUpdated: new Date().toISOString()
             });
         } catch (error) {
@@ -93,25 +97,25 @@ export const AppProvider = ({ children }) => {
     const addIngredient = (ing) => {
         const updated = [...ingredients, ing];
         setIngredients(updated);
-        saveToCloud(updated, null, null);
+        saveToCloud(updated, null, null, null);
     };
 
     const updateIngredient = (oldCode, updatedIng) => {
         const updated = ingredients.map(i => i.code === oldCode ? updatedIng : i);
         setIngredients(updated);
-        saveToCloud(updated, null, null);
+        saveToCloud(updated, null, null, null);
     };
 
     const deleteIngredient = (code) => {
         const updated = ingredients.filter(i => i.code !== code);
         setIngredients(updated);
-        saveToCloud(updated, null, null);
+        saveToCloud(updated, null, null, null);
     };
 
     const updatePriceList = (month, pricesObj) => {
         const updated = { ...priceLists, [month]: pricesObj };
         setPriceLists(updated);
-        saveToCloud(null, updated, null);
+        saveToCloud(null, updated, null, null);
     };
 
     const saveRecipe = (recipe) => {
@@ -123,13 +127,38 @@ export const AppProvider = ({ children }) => {
             updatedRecipes = [...recipes, { ...recipe, id: 'RCP' + Date.now().toString().slice(-4), lastModified: timestamp }];
         }
         setRecipes(updatedRecipes);
-        saveToCloud(null, null, updatedRecipes);
+        saveToCloud(null, null, updatedRecipes, null);
     };
 
     const deleteRecipe = (id) => {
         const updated = recipes.filter(r => r.id !== id);
         setRecipes(updated);
-        saveToCloud(null, null, updated);
+        saveToCloud(null, null, updated, null);
+    };
+
+    const addFolder = (name) => {
+        const newFolder = {
+            id: 'FLD' + Date.now().toString().slice(-4),
+            name
+        };
+        const updated = [...folders, newFolder];
+        setFolders(updated);
+        saveToCloud(null, null, null, updated);
+    };
+
+    const deleteFolder = (id) => {
+        const updatedFolders = folders.filter(f => f.id !== id);
+        // Dissociate recipes that were in this folder
+        const updatedRecipes = recipes.map(r => r.folderId === id ? { ...r, folderId: null } : r);
+        setFolders(updatedFolders);
+        setRecipes(updatedRecipes);
+        saveToCloud(null, null, updatedRecipes, updatedFolders);
+    };
+
+    const renameFolder = (id, newName) => {
+        const updated = folders.map(f => f.id === id ? { ...f, name: newName } : f);
+        setFolders(updated);
+        saveToCloud(null, null, null, updated);
     };
 
     const login = async (email, password) => {
@@ -160,6 +189,7 @@ export const AppProvider = ({ children }) => {
             ingredients, addIngredient, updateIngredient, deleteIngredient,
             priceLists, updatePriceList,
             recipes, saveRecipe, deleteRecipe,
+            folders, addFolder, deleteFolder, renameFolder,
             currentUser, login, register, logout,
             loading
         }}>

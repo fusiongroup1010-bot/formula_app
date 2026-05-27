@@ -2,19 +2,25 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../store';
 import solver from 'javascript-lp-solver';
 import * as XLSX from 'xlsx';
-import { Calculator, Download, AlertTriangle, CheckCircle, Save, LayoutTemplate, Activity, Sliders, Search, Plus, PieChart, X, Printer, Copy, FilePlus, Edit3, Eye, Trash2, RefreshCw, ArrowLeft } from 'lucide-react';
+import { Calculator, Download, AlertTriangle, CheckCircle, Save, LayoutTemplate, Activity, Sliders, Search, Plus, PieChart, X, Printer, Copy, FilePlus, Edit3, Eye, Trash2, RefreshCw, ArrowLeft, Folder, FolderPlus, FolderOpen, Edit2 } from 'lucide-react';
 import { nutrientGroups, aafcoProfiles, allNutrients, formatCurrency } from '../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoSrc from '../assets/logo.png';
 
 export default function RecipeSolver() {
-    const { ingredients, priceLists, recipes, saveRecipe, deleteRecipe, currentUser } = useAppContext();
+    const { ingredients, priceLists, recipes, saveRecipe, deleteRecipe, folders, addFolder, deleteFolder, renameFolder, currentUser } = useAppContext();
     const availableMonths = Object.keys(priceLists).sort().reverse();
     const defaultMonth = availableMonths[0] || '2026-02';
 
     const [viewMode, setViewMode] = useState('list');
     const [selectedRecipeId, setSelectedRecipeId] = useState(null);
+    const [selectedFolderId, setSelectedFolderId] = useState('ALL'); // 'ALL', 'UNCATEGORIZED', or folder ID
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
+    const [editingFolderId, setEditingFolderId] = useState(null);
+    const [editingFolderName, setEditingFolderName] = useState('');
+    const [moveDropdownOpen, setMoveDropdownOpen] = useState(false);
 
     const [recipe, setRecipe] = useState({
         name: 'New Formula 01',
@@ -661,7 +667,8 @@ export default function RecipeSolver() {
             activeIngredients: {},
             ingredientMin: {},
             ingredientMax: {},
-            addedIngredients: []
+            addedIngredients: [],
+            folderId: (selectedFolderId !== 'ALL' && selectedFolderId !== 'UNCATEGORIZED') ? selectedFolderId : null
         });
         setResult(null);
         setManualCost(0);
@@ -744,9 +751,51 @@ export default function RecipeSolver() {
     };
 
     if (viewMode === 'list') {
+        const filteredRecipes = recipes.filter(r => {
+            if (selectedFolderId === 'ALL') return true;
+            if (selectedFolderId === 'UNCATEGORIZED') return !r.folderId;
+            return r.folderId === selectedFolderId;
+        });
+
+        const handleMoveToFolder = (folderId) => {
+            if (!selectedRecipeId) return;
+            const toMove = recipes.find(r => r.id === selectedRecipeId);
+            if (toMove) {
+                const updated = { ...toMove, folderId };
+                saveRecipe(updated);
+                setMoveDropdownOpen(false);
+            }
+        };
+
+        const handleAddFolderSubmit = (e) => {
+            e.preventDefault();
+            if (newFolderName.trim()) {
+                addFolder(newFolderName.trim());
+                setNewFolderName('');
+                setIsCreatingFolder(false);
+            }
+        };
+
+        const handleRenameFolderSubmit = (id, newName) => {
+            if (newName.trim()) {
+                renameFolder(id, newName.trim());
+                setEditingFolderId(null);
+                setEditingFolderName('');
+            }
+        };
+
+        const handleDeleteFolderClick = (id, name) => {
+            if (window.confirm(`Are you sure you want to delete folder "${name}"? The formulas inside will not be deleted; they will become Uncategorized.`)) {
+                deleteFolder(id);
+                if (selectedFolderId === id) {
+                    setSelectedFolderId('ALL');
+                }
+            }
+        };
+
         return (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', background: '#fff', color: '#333', overflow: 'hidden', margin: '-2rem', fontFamily: 'Arial, sans-serif' }}>
-                <div style={{ display: 'flex', gap: '4px', padding: '8px 16px', background: '#f8f9fa', borderBottom: '1px solid #dee2e6' }}>
+                <div style={{ display: 'flex', gap: '4px', padding: '8px 16px', background: '#f8f9fa', borderBottom: '1px solid #dee2e6', alignItems: 'center' }}>
                     <button className="btn" style={{ background: 'transparent', border: 'none', padding: '4px 12px', borderRadius: '4px', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: '4px' }} onClick={handleCreateNew}>
                         <FilePlus size={20} color="#059669" />
                         <span style={{ fontSize: '11px' }}>Create new</span>
@@ -763,42 +812,224 @@ export default function RecipeSolver() {
                         <Trash2 size={20} color="#ef4444" />
                         <span style={{ fontSize: '11px' }}>Delete</span>
                     </button>
+
+                    {selectedRecipeId && (
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <button className="btn" style={{ background: 'transparent', border: 'none', padding: '4px 12px', borderRadius: '4px', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: '4px' }} onClick={() => setMoveDropdownOpen(!moveDropdownOpen)}>
+                                <FolderPlus size={20} color="#2563eb" />
+                                <span style={{ fontSize: '11px' }}>Move to...</span>
+                            </button>
+                            {moveDropdownOpen && (
+                                <>
+                                    <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setMoveDropdownOpen(false)} />
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 999, background: '#fff', border: '1px solid #dee2e6', borderRadius: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', minWidth: '160px', padding: '4px 0' }}>
+                                        <div style={{ padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: '#666', borderBottom: '1px solid #eee' }}>Select Folder</div>
+                                        <div className="dropdown-item" style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }} onClick={() => handleMoveToFolder(null)}>
+                                            (Uncategorized)
+                                        </div>
+                                        {folders.map(f => (
+                                            <div key={f.id} className="dropdown-item" style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }} onClick={() => handleMoveToFolder(f.id)}>
+                                                {f.name}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
                     <button className="btn" style={{ background: 'transparent', border: 'none', padding: '4px 12px', borderRadius: '4px', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: '4px', marginLeft: 'auto' }} onClick={() => { setSelectedRecipeId(null); }}>
                         <RefreshCw size={20} color="#3b82f6" />
                         <span style={{ fontSize: '11px' }}>Refresh</span>
                     </button>
                 </div>
 
-                <div style={{ flex: 1, overflow: 'auto', background: '#fff' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
-                        <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0, boxShadow: '0 1px 0 #ccc' }}>
-                            <tr>
-                                <th style={{ width: '40px', padding: '6px 8px', borderRight: '1px solid #e5e7eb' }}></th>
-                                <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Code / Name</th>
-                                <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Profile</th>
-                                <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Price Month</th>
-                                <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Target Weight</th>
-                                <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Last Modified</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {recipes.map((r, idx) => (
-                                <tr key={r.id} style={{ background: selectedRecipeId === r.id ? '#bae6fd' : (idx % 2 === 0 ? '#fff' : '#f8f9fa'), cursor: 'pointer', borderBottom: '1px solid #e5e7eb' }} onClick={() => setSelectedRecipeId(r.id)} onDoubleClick={() => { setSelectedRecipeId(r.id); handleEditSelected(); }}>
-                                    <td style={{ padding: '6px 8px', textAlign: 'center', borderRight: '1px solid #e5e7eb' }}>
-                                        <input type="checkbox" checked={selectedRecipeId === r.id} readOnly style={{ cursor: 'pointer', margin: 0 }} />
-                                    </td>
-                                    <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#0f172a', borderRight: '1px solid #e5e7eb' }}>{r.name}</td>
-                                    <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.referenceProfile}</td>
-                                    <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.priceMonth}</td>
-                                    <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.targetWeight} kg</td>
-                                    <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.lastModified || 'N/A'}</td>
+                <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+                    {/* Folders Sidebar */}
+                    <div style={{ width: '250px', background: '#f8f9fa', borderRight: '1px solid #dee2e6', display: 'flex', flexDirection: 'column', padding: '16px 12px', minHeight: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '13px', color: '#495057', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Folder size={18} color="#4b5563" /> Folders
+                            </span>
+                            <button 
+                                onClick={() => setIsCreatingFolder(true)} 
+                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '4px' }}
+                                title="Create new folder"
+                            >
+                                <Plus size={16} color="#059669" />
+                            </button>
+                        </div>
+
+                        {isCreatingFolder && (
+                            <form onSubmit={handleAddFolderSubmit} style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+                                <input 
+                                    type="text" 
+                                    value={newFolderName} 
+                                    onChange={e => setNewFolderName(e.target.value)} 
+                                    placeholder="Folder name..." 
+                                    autoFocus
+                                    style={{ flex: 1, padding: '4px 8px', fontSize: '12px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none' }}
+                                />
+                                <button type="submit" style={{ background: '#059669', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>OK</button>
+                                <button type="button" onClick={() => setIsCreatingFolder(false)} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>X</button>
+                            </form>
+                        )}
+
+                        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div 
+                                onClick={() => setSelectedFolderId('ALL')}
+                                style={{ 
+                                    padding: '8px 10px', 
+                                    borderRadius: '6px', 
+                                    cursor: 'pointer', 
+                                    background: selectedFolderId === 'ALL' ? '#3b82f6' : 'transparent', 
+                                    color: selectedFolderId === 'ALL' ? '#fff' : '#333',
+                                    fontWeight: selectedFolderId === 'ALL' ? 'bold' : 'normal',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    fontSize: '12px'
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <FolderOpen size={16} /> All Formulas
+                                </span>
+                                <span style={{ fontSize: '11px', opacity: 0.8 }}>({recipes.length})</span>
+                            </div>
+
+                            <div 
+                                onClick={() => setSelectedFolderId('UNCATEGORIZED')}
+                                style={{ 
+                                    padding: '8px 10px', 
+                                    borderRadius: '6px', 
+                                    cursor: 'pointer', 
+                                    background: selectedFolderId === 'UNCATEGORIZED' ? '#3b82f6' : 'transparent', 
+                                    color: selectedFolderId === 'UNCATEGORIZED' ? '#fff' : '#333',
+                                    fontWeight: selectedFolderId === 'UNCATEGORIZED' ? 'bold' : 'normal',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    fontSize: '12px'
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Folder size={16} /> Uncategorized
+                                </span>
+                                <span style={{ fontSize: '11px', opacity: 0.8 }}>
+                                    ({recipes.filter(r => !r.folderId).length})
+                                </span>
+                            </div>
+
+                            {folders.map(f => {
+                                const folderRecipesCount = recipes.filter(r => r.folderId === f.id).length;
+                                const isEditing = editingFolderId === f.id;
+                                const isSelected = selectedFolderId === f.id;
+
+                                return (
+                                    <div 
+                                        key={f.id}
+                                        style={{ 
+                                            padding: '6px 8px', 
+                                            borderRadius: '6px', 
+                                            background: isSelected ? '#3b82f6' : 'transparent', 
+                                            color: isSelected ? '#fff' : '#333',
+                                            fontWeight: isSelected ? 'bold' : 'normal',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            fontSize: '12px'
+                                        }}
+                                    >
+                                        {isEditing ? (
+                                            <form 
+                                                onSubmit={(e) => { e.preventDefault(); handleRenameFolderSubmit(f.id, editingFolderName); }}
+                                                style={{ display: 'flex', width: '100%', gap: '4px' }}
+                                            >
+                                                <input 
+                                                    type="text" 
+                                                    value={editingFolderName}
+                                                    onChange={e => setEditingFolderName(e.target.value)}
+                                                    autoFocus
+                                                    style={{ flex: 1, padding: '2px 4px', fontSize: '11px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none', color: '#333' }}
+                                                />
+                                                <button type="submit" style={{ background: '#059669', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>OK</button>
+                                            </form>
+                                        ) : (
+                                            <div 
+                                                style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                                                onClick={() => setSelectedFolderId(f.id)}
+                                            >
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    <Folder size={16} /> {f.name}
+                                                </span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                                                    <span style={{ fontSize: '11px', opacity: 0.8 }}>({folderRecipesCount})</span>
+                                                    <Edit2 
+                                                        size={12} 
+                                                        style={{ cursor: 'pointer', opacity: 0.6 }} 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingFolderId(f.id);
+                                                            setEditingFolderName(f.name);
+                                                        }}
+                                                        title="Rename Folder"
+                                                    />
+                                                    <Trash2 
+                                                        size={12} 
+                                                        color="#ef4444" 
+                                                        style={{ cursor: 'pointer', opacity: 0.6 }} 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteFolderClick(f.id, f.name);
+                                                        }}
+                                                        title="Delete Folder"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Recipes Table */}
+                    <div style={{ flex: 1, overflow: 'auto', background: '#fff' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                            <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0, boxShadow: '0 1px 0 #ccc' }}>
+                                <tr>
+                                    <th style={{ width: '40px', padding: '6px 8px', borderRight: '1px solid #e5e7eb' }}></th>
+                                    <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Code / Name</th>
+                                    <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Folder</th>
+                                    <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Profile</th>
+                                    <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Price Month</th>
+                                    <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Target Weight</th>
+                                    <th style={{ padding: '6px 8px', borderRight: '1px solid #e5e7eb', color: '#495057' }}>Last Modified</th>
                                 </tr>
-                            ))}
-                            {recipes.length === 0 && (
-                                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>No recipes found. Click "Create new" to start.</td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {filteredRecipes.map((r, idx) => {
+                                    const folderObj = folders.find(f => f.id === r.folderId);
+                                    const folderName = folderObj ? folderObj.name : '(Uncategorized)';
+                                    return (
+                                        <tr key={r.id} style={{ background: selectedRecipeId === r.id ? '#bae6fd' : (idx % 2 === 0 ? '#fff' : '#f8f9fa'), cursor: 'pointer', borderBottom: '1px solid #e5e7eb' }} onClick={() => setSelectedRecipeId(r.id)} onDoubleClick={() => { setSelectedRecipeId(r.id); handleEditSelected(); }}>
+                                            <td style={{ padding: '6px 8px', textAlign: 'center', borderRight: '1px solid #e5e7eb' }}>
+                                                <input type="checkbox" checked={selectedRecipeId === r.id} readOnly style={{ cursor: 'pointer', margin: 0 }} />
+                                            </td>
+                                            <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#0f172a', borderRight: '1px solid #e5e7eb' }}>{r.name}</td>
+                                            <td style={{ padding: '6px 8px', color: '#0f766e', borderRight: '1px solid #e5e7eb', fontWeight: folderObj ? 'bold' : 'normal' }}>{folderName}</td>
+                                            <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.referenceProfile}</td>
+                                            <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.priceMonth}</td>
+                                            <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.targetWeight} kg</td>
+                                            <td style={{ padding: '6px 8px', color: '#475569', borderRight: '1px solid #e5e7eb' }}>{r.lastModified || 'N/A'}</td>
+                                        </tr>
+                                    );
+                                })}
+                                {filteredRecipes.length === 0 && (
+                                    <tr><td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>No recipes found. Click "Create new" to start.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         );
@@ -857,6 +1088,15 @@ export default function RecipeSolver() {
                         <ArrowLeft size={16} style={{ cursor: 'pointer', color: '#4b5563' }} onClick={() => setViewMode('list')} title="Back to recipes" />
                         <strong style={{ fontSize: '11px', color: '#666' }}>Name:</strong>
                         <input type="text" value={recipe.name} onChange={e => setRecipe({ ...recipe, name: e.target.value })} style={{ flex: 1, padding: '4px', fontSize: '12px', border: '1px solid #ccc', borderRadius: '4px', minWidth: '100px' }} />
+                        <strong style={{ fontSize: '11px', color: '#666', marginLeft: '6px' }}>Folder:</strong>
+                        <select 
+                            value={recipe.folderId || ''} 
+                            onChange={e => setRecipe({ ...recipe, folderId: e.target.value || null })}
+                            style={{ padding: '4px', fontSize: '12px', border: '1px solid #ccc', borderRadius: '4px', minWidth: '100px' }}
+                        >
+                            <option value="">(Uncategorized)</option>
+                            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
                     </div>
                     <button className="btn" style={{ padding: '6px 10px', fontSize: '12px', background: '#3b82f6', color: '#fff', border: '1px solid #2563eb', cursor: 'pointer', borderRadius: '4px' }} onClick={runOptimization}>Optimize</button>
                     <button className="btn" style={{ padding: '6px 8px', fontSize: '12px', background: '#e5e7eb', color: '#374151', border: '1px solid #d1d5db', cursor: 'pointer', borderRadius: '4px' }} title="Export to Excel" onClick={exportExcel}><Download size={14} /></button>
